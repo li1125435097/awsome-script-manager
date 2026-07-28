@@ -92,6 +92,18 @@ copy_tree() {
   chmod +x "$dest/ase" 2>/dev/null || true
 }
 
+# True if the current user can create/write under share (parent may not exist yet).
+install_share_writable() {
+  local share=$1
+  local parent
+  if [[ $(id -u) -eq 0 ]]; then
+    return 0
+  fi
+  parent=$(dirname "$share")
+  mkdir -p "$parent" 2>/dev/null || return 1
+  [[ -w "$parent" ]]
+}
+
 clone_repo() {
   local dest=$1
   if ! command -v git >/dev/null 2>&1; then
@@ -110,35 +122,55 @@ clone_repo() {
   chmod +x "$dest/ase" 2>/dev/null || true
 }
 
+clone_repo_as_root() {
+  local dest=$1
+  if ! command -v git >/dev/null 2>&1; then
+    die "未找到 git，请先安装 git"
+  fi
+  run_as_root mkdir -p "$(dirname "$dest")"
+  if run_as_root test -d "$dest/.git"; then
+    run_as_root git -C "$dest" fetch origin "$REPO_BRANCH"
+    run_as_root git -C "$dest" checkout "$REPO_BRANCH" 2>/dev/null || \
+      run_as_root git -C "$dest" checkout -B "$REPO_BRANCH" "origin/$REPO_BRANCH"
+    run_as_root git -C "$dest" pull --ff-only origin "$REPO_BRANCH" 2>/dev/null || \
+      run_as_root git -C "$dest" reset --hard "origin/$REPO_BRANCH"
+  else
+    run_as_root rm -rf "$dest"
+    run_as_root git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"
+  fi
+  run_as_root chmod +x "$dest/ase" 2>/dev/null || true
+}
+
+copy_tree_as_root() {
+  local src=$1
+  local dest=$2
+  local item
+  run_as_root mkdir -p "$dest"
+  for item in ase lib completions script-hub LICENSE README.md; do
+    if [[ -e "$src/$item" ]]; then
+      run_as_root cp -a "$src/$item" "$dest/"
+    fi
+  done
+  run_as_root chmod +x "$dest/ase" 2>/dev/null || true
+}
+
 install_to_share() {
   local share=$1
   local src=${2:-}
 
   if [[ -n $src ]]; then
     echo "install: 从本地复制到 $share"
-    if [[ -w "$(dirname "$share")" ]] 2>/dev/null || [[ $(id -u) -eq 0 ]]; then
+    if install_share_writable "$share"; then
       copy_tree "$src" "$share"
     else
-      local tmp
-      tmp=$(mktemp -d)
-      copy_tree "$src" "$tmp/tree"
-      run_as_root mkdir -p "$share"
-      run_as_root cp -a "$tmp/tree/." "$share/"
-      rm -rf "$tmp"
+      copy_tree_as_root "$src" "$share"
     fi
   else
     echo "install: 从 $REPO_URL ($REPO_BRANCH) 安装到 $share"
-    if [[ -w "$(dirname "$share")" ]] 2>/dev/null || [[ $(id -u) -eq 0 ]]; then
+    if install_share_writable "$share"; then
       clone_repo "$share"
     else
-      local tmp parent name
-      tmp=$(mktemp -d)
-      clone_repo "$tmp/repo"
-      parent=$(dirname "$share")
-      name=$(basename "$share")
-      run_as_root mkdir -p "$parent"
-      run_as_root cp -a "$tmp/repo" "$share"
-      rm -rf "$tmp"
+      clone_repo_as_root "$share"
     fi
   fi
 }
