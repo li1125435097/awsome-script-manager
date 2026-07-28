@@ -4,7 +4,25 @@ Pure Bash CLI to manage a directory of scripts synced from a Git repository.
 
 ## Install `ase`
 
-Add the repository directory to your `PATH`, or symlink the `ase` entry point:
+交互式安装（推荐）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/li1125435097/awsome-script-manager/main/install.sh | bash
+```
+
+脚本会询问是否指定 bin 目录；不指定则选择「当前用户（`~/bin`）」或「全局（`/usr/local/bin`）」。程序文件默认放在 `~/.local/share/ase` 或 `/usr/local/share/ase`。
+
+非交互环境变量：`ASE_INSTALL_SCOPE=user|global`、`ASE_INSTALL_BIN=/path/to/bin`、`ASE_INSTALL_SHARE=/path/to/share`。
+
+克隆仓库后也可本地安装：
+
+```bash
+git clone https://github.com/li1125435097/awsome-script-manager.git
+cd awsome-script-manager
+./install.sh
+```
+
+或手动将仓库加入 `PATH`，或只链入口脚本：
 
 ```bash
 ln -sf /path/to/awsome-script-manager/ase ~/bin/ase
