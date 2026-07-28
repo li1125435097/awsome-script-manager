@@ -51,9 +51,24 @@ ase_write_default_config() {
     fi
     echo 'ASE_GIT_REMOTE="origin"'
     echo 'ASE_GIT_BRANCH="main"'
-    echo 'ASE_BIN_USER="$HOME/bin"'
+    if [[ $(id -u) -eq 0 ]]; then
+      printf 'ASE_BIN_USER=%q\n' "$ASE_SYSTEM_BIN"
+    else
+      echo 'ASE_BIN_USER="$HOME/bin"'
+    fi
   } >"$cfg"
   echo "ase: wrote default config to $cfg" >&2
+}
+
+ase_warn_path_missing() {
+  local bin_dir=$1
+  [[ -n $bin_dir ]] || return 0
+  case ":${PATH}:" in
+    *":$bin_dir:"*) return 0 ;;
+  esac
+  echo "ase: $bin_dir is not on PATH; the command may not run until you add it or use -a." >&2
+  echo "ase:  export PATH=\"$bin_dir:\$PATH\"" >&2
+  echo "ase:  or: ase install <name> -a  # -> $ASE_SYSTEM_BIN" >&2
 }
 
 ase_load_config() {

@@ -184,10 +184,12 @@ cmd_install() {
     fi
     ln -sf "$canon" "$ASE_SYSTEM_BIN/$name"
     echo "installed $name -> $ASE_SYSTEM_BIN/$name" >&2
+    ase_warn_path_missing "$ASE_SYSTEM_BIN"
   else
     mkdir -p "$ASE_BIN_USER"
     ln -sf "$canon" "$ASE_BIN_USER/$name"
     echo "installed $name -> $ASE_BIN_USER/$name" >&2
+    ase_warn_path_missing "$ASE_BIN_USER"
   fi
 }
 
