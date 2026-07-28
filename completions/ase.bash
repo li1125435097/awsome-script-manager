@@ -40,6 +40,13 @@ _ase_script_names() {
   printf '%s\n' "$names"
 }
 
+_ase_hub_names() {
+  local ase_cmd names
+  ase_cmd=$(_ase_cmd_path "${words[0]}") || return 1
+  names=$("$ase_cmd" __complete_hub_names 2>/dev/null) || return 1
+  printf '%s\n' "$names"
+}
+
 _ase() {
   local cur prev words cword
   _ase_init_words || return 0
@@ -47,15 +54,23 @@ _ase() {
   local cmd="${words[1]:-}"
 
   if (( cword == 1 )); then
-    COMPREPLY=($(compgen -W "list update install remove run help" -- "$cur"))
+    COMPREPLY=($(compgen -W "list update search pull install remove installed run help" -- "$cur"))
     return 0
   fi
 
   case "$cmd" in
-    update)
-      if [[ $cur == -* ]]; then
-        COMPREPLY=($(compgen -W "-s" -- "$cur"))
+    search)
+      return 0
+      ;;
+    pull)
+      if (( cword > 2 )); then
+        return 0
       fi
+      local hub_names
+      hub_names=$(_ase_hub_names) || return 0
+      mapfile -t COMPREPLY < <(compgen -W "$hub_names" -- "$cur")
+      ;;
+    update)
       ;;
     install)
       local names

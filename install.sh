@@ -111,7 +111,7 @@ copy_tree() {
   local dest=$2
   mkdir -p "$dest"
   local item
-  for item in ase lib completions script-hub LICENSE README.md; do
+  for item in ase lib completions script-hub data LICENSE README.md; do
     if [[ -e "$src/$item" ]]; then
       cp -a "$src/$item" "$dest/"
     fi
@@ -188,7 +188,7 @@ copy_tree_as_root() {
   local dest=$2
   local item
   run_as_root mkdir -p "$dest"
-  for item in ase lib completions script-hub LICENSE README.md; do
+  for item in ase lib completions script-hub data LICENSE README.md; do
     if [[ -e "$src/$item" ]]; then
       run_as_root cp -a "$src/$item" "$dest/"
     fi
@@ -383,9 +383,10 @@ main() {
   echo "安装完成。可选：启用补全"
   echo "  source \"$share_dir/completions/ase.bash\""
   if [[ -n $src_root ]]; then
-    echo "本地安装：脚本目录为 $(expand_home "${ASE_INSTALL_SCRIPTS:-$USER_SCRIPTS}")（ase update 从仓库 script-hub 同步）。"
+    echo "本地安装：脚本目录为 $(expand_home "${ASE_INSTALL_SCRIPTS:-$USER_SCRIPTS}")（ase update 同步 script-hub.list，ase pull 拉取脚本）。"
   else
-    echo "首次运行 ase 时会生成 ~/.config/ase/config（默认 ASE_SCRIPTS_DIR 为 $share_dir/script-hub）。"
+    echo "首次运行 ase 时会生成 ~/.config/ase/config（默认 ASE_SCRIPTS_DIR 为 \$HOME/scripts）。"
+    echo "运行 ase update 同步 script-hub 索引，再用 ase pull <name> 拉取脚本。"
   fi
 }
 

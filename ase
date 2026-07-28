@@ -18,9 +18,12 @@ Usage: ase <command> [options] [args]
 
 Commands:
   list                 List scripts (name and first-line description)
-  update [-s]          Sync scripts from git remote into ASE_SCRIPTS_DIR
+  update               Sync data/script-hub.list from git remote
+  search <query>       Fuzzy-search script names in script-hub.list
+  pull <name> [...]    Pull script(s) from remote script-hub into ASE_SCRIPTS_DIR
   install <name> [-a]  Symlink script to ~/bin (or /usr/local/bin with -a)
   remove <name>        Remove installed symlinks from ~/bin and /usr/local/bin
+  installed            List scripts recorded in data/install.list
   run <name> [-- args] Run a script
 
 Environment / config:
@@ -28,7 +31,6 @@ Environment / config:
   ASE_CONFIG           Config file (default: ~/.config/ase/config)
 
 Options:
-  update -s            On name conflict, overwrite local with remote
   install -a           Install to /usr/local/bin instead of ~/bin
 EOF
 }
@@ -83,17 +85,64 @@ cmd_run() {
 }
 
 cmd_update() {
-  local save_remote=0
-  OPTIND=1
-  while getopts ":s" opt; do
-    case $opt in
-      s) save_remote=1 ;;
-      *) usage; exit 1 ;;
-    esac
-  done
-  shift $((OPTIND - 1))
+  ase_load_config
+
+  if ! command -v git >/dev/null 2>&1; then
+    ase_die "git not found"
+  fi
+
+  local remote_ref list_rel list_path
+  remote_ref=$(ase_git_remote_ref)
+  list_rel=$ASE_SCRIPT_HUB_LIST_REL
+  list_path=$(ase_script_hub_list_path)
+
+  git -C "$ASE_GIT_ROOT" fetch "$ASE_GIT_REMOTE" || ase_die "git fetch failed"
+  git -C "$ASE_GIT_ROOT" rev-parse --verify "$remote_ref" >/dev/null 2>&1 || \
+    ase_die "remote ref not found: $remote_ref"
+
+  if ! git -C "$ASE_GIT_ROOT" cat-file -e "$remote_ref:$list_rel" 2>/dev/null; then
+    ase_die "remote file not found: $list_rel"
+  fi
+
+  mkdir -p "$(dirname "$list_path")"
+  git -C "$ASE_GIT_ROOT" show "$remote_ref:$list_rel" >"$list_path"
+  echo "ase update: synced $list_path" >&2
+}
+
+cmd_search() {
+  [[ $# -ge 1 ]] || ase_die "search: missing query"
+  local query=$1
 
   ase_load_config
+  local list_path
+  list_path=$(ase_script_hub_list_path)
+  if [[ ! -f $list_path ]]; then
+    ase_die "script-hub.list not found ($list_path); run: ase update"
+  fi
+
+  local names=() name matches=0
+  while IFS= read -r name; do
+    [[ -n $name ]] || continue
+    names+=("$name")
+  done < <(ase_read_script_hub_names)
+
+  while IFS= read -r name; do
+    [[ -n $name ]] || continue
+    printf '%s\n' "$name"
+    ((matches++)) || true
+  done < <(ase_fuzzy_match_names "$query" "${names[@]}")
+
+  if (( matches == 0 )); then
+    echo "ase search: no matches for: $query" >&2
+    return 1
+  fi
+}
+
+cmd_pull() {
+  [[ $# -ge 1 ]] || ase_die "pull: missing script name"
+
+  ase_load_config
+  mkdir -p "$ASE_SCRIPTS_DIR"
 
   if ! command -v git >/dev/null 2>&1; then
     ase_die "git not found"
@@ -101,47 +150,83 @@ cmd_update() {
 
   local remote_ref
   remote_ref=$(ase_git_remote_ref)
-
   git -C "$ASE_GIT_ROOT" fetch "$ASE_GIT_REMOTE" || ase_die "git fetch failed"
   git -C "$ASE_GIT_ROOT" rev-parse --verify "$remote_ref" >/dev/null 2>&1 || \
     ase_die "remote ref not found: $remote_ref"
 
-  local added=0 skipped=0 overwritten=0
-  local git_path base local_path
-
-  _ase_update_list_remote_files() {
-    local list_rel="${ASE_GIT_SCRIPTS_REL:-$ASE_SCRIPTS_REL}"
-    if [[ -n $list_rel ]]; then
-      git -C "$ASE_GIT_ROOT" ls-tree -r --name-only "$remote_ref" -- "${list_rel}/" 2>/dev/null || true
-    else
-      git -C "$ASE_GIT_ROOT" ls-tree "$remote_ref" 2>/dev/null | awk '$2 == "blob" { print $4 }'
+  local name git_path local_path pulled=0 skipped=0
+  for name in "$@"; do
+    if [[ -z $name || $name == *"/"* || $name == *".."* ]]; then
+      ase_die "invalid script name: ${name:-<empty>}"
     fi
-  }
 
-  while IFS= read -r git_path; do
-    [[ -n $git_path ]] || continue
-    base=$(basename "$git_path")
-    [[ -n $base ]] || continue
+    git_path=$(ase_hub_script_git_path "$name")
+    if ! git -C "$ASE_GIT_ROOT" cat-file -e "$remote_ref:$git_path" 2>/dev/null; then
+      echo "ase pull: not in remote script-hub: $name" >&2
+      continue
+    fi
 
-    local_path="$ASE_SCRIPTS_DIR/$base"
-
+    local_path="$ASE_SCRIPTS_DIR/$name"
     if [[ -f $local_path ]]; then
-      if (( save_remote )); then
-        git -C "$ASE_GIT_ROOT" show "$remote_ref:$git_path" >"$local_path"
-        ase_maybe_chmod_executable "$local_path"
-        ((overwritten++)) || true
+      if ase_can_prompt; then
+        if ! ase_prompt_yn "本地已有 $name，是否覆盖？" n; then
+          echo "ase pull: skipped $name" >&2
+          ((skipped++)) || true
+          continue
+        fi
       else
+        echo "ase pull: skipped $name (already exists; use a TTY to confirm overwrite)" >&2
         ((skipped++)) || true
+        continue
       fi
-    else
-      mkdir -p "$ASE_SCRIPTS_DIR"
-      git -C "$ASE_GIT_ROOT" show "$remote_ref:$git_path" >"$local_path"
-      ase_maybe_chmod_executable "$local_path"
-      ((added++)) || true
     fi
-  done < <(_ase_update_list_remote_files)
 
-  echo "ase update: added $added, skipped $skipped, overwritten $overwritten" >&2
+    git -C "$ASE_GIT_ROOT" show "$remote_ref:$git_path" >"$local_path"
+    ase_maybe_chmod_executable "$local_path"
+    echo "ase pull: $name -> $local_path" >&2
+    ((pulled++)) || true
+  done
+
+  echo "ase pull: pulled $pulled, skipped $skipped" >&2
+}
+
+cmd_installed() {
+  ase_load_config
+  local names=() name intro len max=0
+  local green="" reset=""
+
+  while IFS= read -r name; do
+    [[ -n $name ]] || continue
+    names+=("$name")
+    len=${#name}
+    (( len > max )) && max=$len
+  done < <(ase_read_install_names)
+
+  if [[ ${#names[@]} -eq 0 ]]; then
+    echo "ase installed: (none)" >&2
+    return 0
+  fi
+
+  if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
+
+  for name in "${names[@]}"; do
+    intro=""
+    if [[ -d ${ASE_SCRIPTS_DIR:-} && -f $ASE_SCRIPTS_DIR/$name ]]; then
+      intro=$(ase_script_description_line "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
+    fi
+    if [[ -z $intro ]]; then
+      intro="(not in ASE_SCRIPTS_DIR)"
+    fi
+    # shellcheck disable=SC2059
+    printf "${green}%-${max}s${reset}  %s\n" "$name" "$intro"
+  done
+}
+
+cmd_complete_hub_names() {
+  ase_read_script_hub_names 2>/dev/null || true
 }
 
 cmd_install() {
@@ -192,6 +277,8 @@ cmd_install() {
     echo "installed $name -> $ASE_BIN_USER/$name" >&2
     ase_warn_path_missing "$ASE_BIN_USER"
   fi
+
+  ase_install_list_add "$name"
 }
 
 cmd_remove() {
@@ -215,16 +302,21 @@ cmd_remove() {
   done
 
   ase_forget_cmd_hash "$name"
+  ase_install_list_remove "$name"
 }
 
 main() {
   case "${1:-}" in
     list) cmd_list ;;
     update) cmd_update "${@:2}" ;;
+    search) cmd_search "${@:2}" ;;
+    pull) cmd_pull "${@:2}" ;;
     install) cmd_install "${@:2}" ;;
     remove) cmd_remove "${@:2}" ;;
+    installed) cmd_installed "${@:2}" ;;
     run) cmd_run "${@:2}" ;;
     __complete_names) cmd_complete_names ;;
+    __complete_hub_names) cmd_complete_hub_names ;;
     -h | --help | help | "") usage ;;
     *)
       usage
