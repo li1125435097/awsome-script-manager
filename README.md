@@ -68,7 +68,7 @@ ase run mytool -- --verbose
 ### `install` / `remove`
 
 - `install` creates a symlink to the script file.
-- `remove` deletes the script from `ASE_SCRIPTS_DIR` and removes symlinks in `~/bin` and `/usr/local/bin` only when they point at that script.
+- `remove` removes symlinks in `~/bin` and `/usr/local/bin` only when they point at that script (the file in `ASE_SCRIPTS_DIR` is kept).
 
 ## Tab completion
 

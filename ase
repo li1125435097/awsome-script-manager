@@ -14,7 +14,7 @@ Commands:
   list                 List scripts (name and first-line description)
   update [-s]          Sync scripts from git remote into ASE_SCRIPTS_DIR
   install <name> [-a]  Symlink script to ~/bin (or /usr/local/bin with -a)
-  remove <name>        Remove script and installed symlinks
+  remove <name>        Remove installed symlinks from ~/bin and /usr/local/bin
   run <name> [-- args] Run a script
 
 Environment / config:
@@ -199,10 +199,6 @@ cmd_remove() {
     if command -v md5sum >/dev/null 2>&1; then
       hash=$(md5sum "$script_path" | awk '{print $1}')
     fi
-    rm -f "$script_path"
-    echo "removed $script_path" >&2
-  else
-    echo "ase: script not in directory: $name (cleaning symlinks anyway)" >&2
   fi
 
   local bindir link_path link_hash dest
