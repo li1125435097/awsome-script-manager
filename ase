@@ -110,8 +110,9 @@ cmd_update() {
   local git_path base local_path
 
   _ase_update_list_remote_files() {
-    if [[ -n $ASE_SCRIPTS_REL ]]; then
-      git -C "$ASE_GIT_ROOT" ls-tree -r --name-only "$remote_ref" -- "${ASE_SCRIPTS_REL}/" 2>/dev/null || true
+    local list_rel="${ASE_GIT_SCRIPTS_REL:-$ASE_SCRIPTS_REL}"
+    if [[ -n $list_rel ]]; then
+      git -C "$ASE_GIT_ROOT" ls-tree -r --name-only "$remote_ref" -- "${list_rel}/" 2>/dev/null || true
     else
       git -C "$ASE_GIT_ROOT" ls-tree "$remote_ref" 2>/dev/null | awk '$2 == "blob" { print $4 }'
     fi

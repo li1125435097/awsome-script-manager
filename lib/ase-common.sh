@@ -108,11 +108,19 @@ ase_load_config() {
   ASE_GIT_ROOT=$(ase_canonical_path "$ASE_GIT_ROOT")
 
   local prefix="$ASE_GIT_ROOT/"
-  if [[ $ASE_SCRIPTS_DIR != "$ASE_GIT_ROOT" && $ASE_SCRIPTS_DIR != "$prefix"* ]]; then
-    ase_die "ASE_SCRIPTS_DIR must be inside ASE_GIT_ROOT"
-  fi
-
-  if [[ $ASE_SCRIPTS_DIR == "$ASE_GIT_ROOT" ]]; then
+  if [[ -n ${ASE_GIT_SCRIPTS_REL:-} ]]; then
+    if [[ $ASE_SCRIPTS_DIR == "$ASE_GIT_ROOT" || $ASE_SCRIPTS_DIR == "$prefix"* ]]; then
+      if [[ $ASE_SCRIPTS_DIR == "$ASE_GIT_ROOT" ]]; then
+        ASE_SCRIPTS_REL=""
+      else
+        ASE_SCRIPTS_REL="${ASE_SCRIPTS_DIR#"$prefix"}"
+      fi
+    else
+      ASE_SCRIPTS_REL=""
+    fi
+  elif [[ $ASE_SCRIPTS_DIR != "$ASE_GIT_ROOT" && $ASE_SCRIPTS_DIR != "$prefix"* ]]; then
+    ase_die "ASE_SCRIPTS_DIR must be inside ASE_GIT_ROOT (or set ASE_GIT_SCRIPTS_REL for an external scripts dir)"
+  elif [[ $ASE_SCRIPTS_DIR == "$ASE_GIT_ROOT" ]]; then
     ASE_SCRIPTS_REL=""
   else
     ASE_SCRIPTS_REL="${ASE_SCRIPTS_DIR#"$prefix"}"
@@ -227,8 +235,9 @@ ase_git_remote_ref() {
 
 ase_git_path_in_repo() {
   local basename=$1
-  if [[ -n $ASE_SCRIPTS_REL ]]; then
-    echo "${ASE_SCRIPTS_REL}/${basename}"
+  local rel="${ASE_GIT_SCRIPTS_REL:-$ASE_SCRIPTS_REL}"
+  if [[ -n $rel ]]; then
+    echo "${rel}/${basename}"
   else
     echo "$basename"
   fi
