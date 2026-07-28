@@ -88,4 +88,30 @@ _ase_register_completions() {
   done
 }
 
+_ase_cli_binary() {
+  if [[ -x "$_ASE_ROOT/ase" ]]; then
+    printf '%s\n' "$_ASE_ROOT/ase"
+    return 0
+  fi
+  command -v ase 2>/dev/null
+}
+
+_ase_install_cli_wrapper() {
+  [[ $(type -t ase 2>/dev/null) == function ]] && return 0
+  local bin
+  bin=$(_ase_cli_binary) || return 0
+  _ASE_CLI_BIN=$bin
+  ase() {
+    if [[ ${1:-} == remove && $# -ge 2 ]]; then
+      local _ase_remove_name=$2
+      "$_ASE_CLI_BIN" "$@"
+      local _ase_remove_status=$?
+      hash -d "$_ase_remove_name" 2>/dev/null || true
+      return "$_ase_remove_status"
+    fi
+    "$_ASE_CLI_BIN" "$@"
+  }
+}
+
+_ase_install_cli_wrapper
 _ase_register_completions

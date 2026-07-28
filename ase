@@ -212,6 +212,8 @@ cmd_remove() {
       echo "removed $link_path" >&2
     fi
   done
+
+  ase_forget_cmd_hash "$name"
 }
 
 main() {

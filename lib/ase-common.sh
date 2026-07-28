@@ -8,6 +8,13 @@ ase_die() {
   exit 1
 }
 
+# Drop bash's cached path for a command name (no-op outside bash).
+ase_forget_cmd_hash() {
+  local name=$1
+  [[ -n $name && -n ${BASH_VERSION:-} ]] || return 0
+  hash -d "$name" 2>/dev/null || true
+}
+
 ase_canonical_path() {
   local path=$1
   if [[ -z $path ]]; then
