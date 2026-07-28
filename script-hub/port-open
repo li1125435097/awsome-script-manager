@@ -1,0 +1,27 @@
+# Check whether a TCP port is listening on localhost
+#!/usr/bin/env bash
+set -euo pipefail
+
+port="${1:-}"
+if [[ -z $port ]]; then
+  echo "usage: port-open <port>" >&2
+  exit 1
+fi
+
+if command -v ss >/dev/null 2>&1; then
+  if ss -ltn "( sport = :$port )" 2>/dev/null | grep -q LISTEN; then
+    echo "open: $port"
+    exit 0
+  fi
+elif command -v netstat >/dev/null 2>&1; then
+  if netstat -ltn 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" { found=1 } END { exit !found }'; then
+    echo "open: $port"
+    exit 0
+  fi
+else
+  echo "port-open: need ss or netstat" >&2
+  exit 2
+fi
+
+echo "closed: $port"
+exit 1

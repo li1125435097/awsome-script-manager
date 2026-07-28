@@ -1,0 +1,9 @@
+# Print current local time as ISO-8601
+#!/usr/bin/env bash
+set -euo pipefail
+
+if date --version >/dev/null 2>&1; then
+  date -Iseconds
+else
+  date '+%Y-%m-%dT%H:%M:%S%z'
+fi

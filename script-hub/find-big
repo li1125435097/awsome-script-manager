@@ -1,0 +1,23 @@
+# Find largest regular files under a path (default .)
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="${1:-.}"
+limit="${2:-15}"
+
+if [[ ! -d $root ]]; then
+  echo "find-big: not a directory: $root" >&2
+  exit 1
+fi
+
+find "$root" -type f -printf '%s\t%p\n' 2>/dev/null \
+  | sort -rn \
+  | head -n "$limit" \
+  | awk '{
+      size=$1; $1=""; sub(/^\t/, "", $0);
+      hum=size; unit="B";
+      if (hum>=1073741824) { hum=hum/1073741824; unit="G" }
+      else if (hum>=1048576) { hum=hum/1048576; unit="M" }
+      else if (hum>=1024) { hum=hum/1024; unit="K" }
+      printf "%8.1f%s  %s\n", hum, unit, $0
+    }'

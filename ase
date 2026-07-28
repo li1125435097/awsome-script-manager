@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ASE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export ASE_DEFAULT_GIT_ROOT="$ASE_ROOT"
+# shellcheck source=lib/ase-common.sh
+source "$ASE_ROOT/lib/ase-common.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: ase <command> [options] [args]
+
+Commands:
+  list                 List scripts (name and first-line description)
+  update [-s]          Sync scripts from git remote into ASE_SCRIPTS_DIR
+  install <name> [-a]  Symlink script to ~/bin (or /usr/local/bin with -a)
+  remove <name>        Remove script and installed symlinks
+  run <name> [-- args] Run a script
+
+Environment / config:
+  ASE_SCRIPTS_DIR      Local scripts directory (required)
+  ASE_CONFIG           Config file (default: ~/.config/ase/config)
+
+Options:
+  update -s            On name conflict, overwrite local with remote
+  install -a           Install to /usr/local/bin instead of ~/bin
+EOF
+}
+
+cmd_list() {
+  ase_require_scripts_dir
+  local names=() name intro n len max=0
+  local green="" reset=""
+
+  while IFS= read -r name; do
+    [[ -n $name ]] || continue
+    names+=("$name")
+    len=${#name}
+    (( len > max )) && max=$len
+  done < <(ase_enumerate_scripts)
+
+  if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
+
+  for name in "${names[@]}"; do
+    intro=$(head -n1 "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
+    if [[ -z $intro ]]; then
+      intro="(empty)"
+    fi
+    # shellcheck disable=SC2059
+    printf "${green}%-${max}s${reset}  %s\n" "$name" "$intro"
+  done
+}
+
+cmd_complete_names() {
+  ase_enumerate_scripts
+}
+
+cmd_run() {
+  [[ $# -ge 1 ]] || ase_die "run: missing script name"
+
+  local name=$1
+  shift
+  if [[ ${1:-} == "--" ]]; then
+    shift
+  fi
+
+  local script
+  script=$(ase_resolve_script_path "$name") || exit $?
+
+  if [[ -x $script ]]; then
+    exec "$script" "$@"
+  fi
+  exec bash "$script" "$@"
+}
+
+cmd_update() {
+  local save_remote=0
+  OPTIND=1
+  while getopts ":s" opt; do
+    case $opt in
+      s) save_remote=1 ;;
+      *) usage; exit 1 ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  ase_load_config
+
+  if ! command -v git >/dev/null 2>&1; then
+    ase_die "git not found"
+  fi
+
+  local remote_ref
+  remote_ref=$(ase_git_remote_ref)
+
+  git -C "$ASE_GIT_ROOT" fetch "$ASE_GIT_REMOTE" || ase_die "git fetch failed"
+  git -C "$ASE_GIT_ROOT" rev-parse --verify "$remote_ref" >/dev/null 2>&1 || \
+    ase_die "remote ref not found: $remote_ref"
+
+  local added=0 skipped=0 overwritten=0
+  local git_path base local_path
+
+  _ase_update_list_remote_files() {
+    if [[ -n $ASE_SCRIPTS_REL ]]; then
+      git -C "$ASE_GIT_ROOT" ls-tree -r --name-only "$remote_ref" -- "${ASE_SCRIPTS_REL}/" 2>/dev/null || true
+    else
+      git -C "$ASE_GIT_ROOT" ls-tree "$remote_ref" 2>/dev/null | awk '$2 == "blob" { print $4 }'
+    fi
+  }
+
+  while IFS= read -r git_path; do
+    [[ -n $git_path ]] || continue
+    base=$(basename "$git_path")
+    [[ -n $base ]] || continue
+
+    local_path="$ASE_SCRIPTS_DIR/$base"
+
+    if [[ -f $local_path ]]; then
+      if (( save_remote )); then
+        git -C "$ASE_GIT_ROOT" show "$remote_ref:$git_path" >"$local_path"
+        ase_maybe_chmod_executable "$local_path"
+        ((overwritten++)) || true
+      else
+        ((skipped++)) || true
+      fi
+    else
+      mkdir -p "$ASE_SCRIPTS_DIR"
+      git -C "$ASE_GIT_ROOT" show "$remote_ref:$git_path" >"$local_path"
+      ase_maybe_chmod_executable "$local_path"
+      ((added++)) || true
+    fi
+  done < <(_ase_update_list_remote_files)
+
+  echo "ase update: added $added, skipped $skipped, overwritten $overwritten" >&2
+}
+
+cmd_install() {
+  local all_users=0
+  local positional=()
+
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -a)
+        all_users=1
+        shift
+        ;;
+      --)
+        shift
+        positional+=("$@")
+        break
+        ;;
+      -*)
+        usage
+        exit 1
+        ;;
+      *)
+        positional+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  [[ ${#positional[@]} -ge 1 ]] || ase_die "install: missing script name"
+  local name=${positional[0]}
+
+  ase_require_scripts_dir
+
+  local script target canon
+  script=$(ase_resolve_script_path "$name") || exit $?
+  canon=$(ase_canonical_path "$script")
+
+  if (( all_users )); then
+    if [[ ! -w $ASE_SYSTEM_BIN ]] 2>/dev/null; then
+      ase_die "cannot write to $ASE_SYSTEM_BIN; try: sudo ASE_CONFIG=\${ASE_CONFIG:-\$HOME/.config/ase/config} ase install $name -a"
+    fi
+    ln -sf "$canon" "$ASE_SYSTEM_BIN/$name"
+    echo "installed $name -> $ASE_SYSTEM_BIN/$name" >&2
+  else
+    mkdir -p "$ASE_BIN_USER"
+    ln -sf "$canon" "$ASE_BIN_USER/$name"
+    echo "installed $name -> $ASE_BIN_USER/$name" >&2
+  fi
+}
+
+cmd_remove() {
+  [[ $# -ge 1 ]] || ase_die "remove: missing script name"
+  local name=$1
+
+  ase_load_config
+
+  local script_path="$ASE_SCRIPTS_DIR/$name"
+  local canon=""
+  local hash=""
+  if [[ -f $script_path ]]; then
+    canon=$(ase_canonical_path "$script_path")
+    if command -v md5sum >/dev/null 2>&1; then
+      hash=$(md5sum "$script_path" | awk '{print $1}')
+    fi
+    rm -f "$script_path"
+    echo "removed $script_path" >&2
+  else
+    echo "ase: script not in directory: $name (cleaning symlinks anyway)" >&2
+  fi
+
+  local bindir link_path link_hash dest
+  for bindir in "$ASE_BIN_USER" "$ASE_SYSTEM_BIN"; do
+    link_path="$bindir/$name"
+    [[ -e $link_path || -L $link_path ]] || continue
+    if [[ -L $link_path ]]; then
+      dest=$(readlink "$link_path" 2>/dev/null || true)
+      if [[ "$dest" == "$canon" || "$dest" == "$script_path" || "$dest" == "$ASE_SCRIPTS_DIR/$name" ]]; then
+        rm -f "$link_path"
+      elif [[ -n $canon ]]; then
+        ase_unlink_if_points_to "$link_path" "$canon"
+      fi
+    elif [[ -f $link_path && -n $hash ]] && command -v md5sum >/dev/null 2>&1; then
+      link_hash=$(md5sum "$link_path" | awk '{print $1}')
+      if [[ $link_hash == "$hash" ]]; then
+        rm -f "$link_path"
+      fi
+    elif [[ -f $link_path && -z $hash ]]; then
+      rm -f "$link_path"
+      echo "removed $link_path" >&2
+    fi
+  done
+}
+
+main() {
+  case "${1:-}" in
+    list) cmd_list ;;
+    update) cmd_update "${@:2}" ;;
+    install) cmd_install "${@:2}" ;;
+    remove) cmd_remove "${@:2}" ;;
+    run) cmd_run "${@:2}" ;;
+    __complete_names) cmd_complete_names ;;
+    -h | --help | help | "") usage ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

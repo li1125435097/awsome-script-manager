@@ -1,0 +1,6 @@
+# Summarize disk usage of files in the current directory (human-readable)
+#!/usr/bin/env bash
+set -euo pipefail
+
+depth="${1:-1}"
+du -h --max-depth="$depth" . 2>/dev/null | sort -hr | head -n "${2:-20}"

@@ -1,0 +1,18 @@
+# Print random hex bytes (default 16 bytes)
+#!/usr/bin/env bash
+set -euo pipefail
+
+bytes="${1:-16}"
+if ! [[ $bytes =~ ^[0-9]+$ ]] || (( bytes < 1 || bytes > 4096 )); then
+  echo "usage: randhex [byte-count 1-4096]" >&2
+  exit 1
+fi
+
+if command -v openssl >/dev/null 2>&1; then
+  openssl rand -hex "$bytes"
+elif [[ -r /dev/urandom ]]; then
+  head -c "$bytes" /dev/urandom | od -An -tx1 | tr -d ' \n'
+else
+  echo "randhex: no openssl or /dev/urandom" >&2
+  exit 2
+fi
