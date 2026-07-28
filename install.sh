@@ -69,6 +69,29 @@ detect_src_root() {
   printf '%s\n' "$dir"
 }
 
+path_under_home() {
+  local path=$1
+  [[ $path == "$HOME"/* || $path == "$HOME" ]]
+}
+
+# curl | bash 时 stdin 是管道，不是终端；从 /dev/tty 读入以便交互（未设 ASE_INSTALL_* 时）。
+ensure_interactive_stdin() {
+  if [[ -t 0 ]]; then
+    return 0
+  fi
+  if [[ -n ${ASE_INSTALL_BIN:-}${ASE_INSTALL_SCOPE:-} ]]; then
+    return 0
+  fi
+  if [[ -e /dev/tty ]]; then
+    exec </dev/tty
+  fi
+}
+
+is_system_bin_dir() {
+  local bin_dir=$1
+  [[ $bin_dir == "$GLOBAL_BIN" || $bin_dir == /usr/local/bin || $bin_dir == /usr/bin ]]
+}
+
 run_as_root() {
   if [[ $(id -u) -eq 0 ]]; then
     "$@"
@@ -162,6 +185,8 @@ install_to_share() {
     echo "install: 从本地复制到 $share"
     if install_share_writable "$share"; then
       copy_tree "$src" "$share"
+    elif path_under_home "$share"; then
+      die "无法写入 $share（请检查磁盘空间与目录权限）"
     else
       copy_tree_as_root "$src" "$share"
     fi
@@ -169,6 +194,8 @@ install_to_share() {
     echo "install: 从 $REPO_URL ($REPO_BRANCH) 安装到 $share"
     if install_share_writable "$share"; then
       clone_repo "$share"
+    elif path_under_home "$share"; then
+      die "无法写入 $share（请检查磁盘空间与目录权限）"
     else
       clone_repo_as_root "$share"
     fi
@@ -180,12 +207,13 @@ link_ase() {
   local bin_dir=$2
   local link="$bin_dir/ase"
 
-  mkdir -p "$bin_dir" 2>/dev/null || run_as_root mkdir -p "$bin_dir"
-
-  if [[ -w "$bin_dir" ]] 2>/dev/null || [[ $(id -u) -eq 0 ]]; then
-    ln -sfn "$share/ase" "$link"
-  else
+  if is_system_bin_dir "$bin_dir"; then
+    run_as_root mkdir -p "$bin_dir"
     run_as_root ln -sfn "$share/ase" "$link"
+  else
+    mkdir -p "$bin_dir" || die "无法创建目录 $bin_dir"
+    [[ -w "$bin_dir" ]] || die "无法写入 $bin_dir"
+    ln -sfn "$share/ase" "$link"
   fi
   echo "install: ase -> $link (指向 $share/ase)"
 }
@@ -203,6 +231,8 @@ path_hint() {
 
 main() {
   local src_root bin_dir share_dir custom scope
+
+  ensure_interactive_stdin
 
   src_root=$(detect_src_root "${BASH_SOURCE[0]:-}") || src_root=""
 
