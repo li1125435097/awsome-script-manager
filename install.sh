@@ -306,7 +306,7 @@ main() {
   echo
   echo "安装完成。可选：启用补全"
   echo "  source \"$share_dir/completions/ase.bash\""
-  echo "首次运行 ase 时会生成 ~/.config/ase/config，请按需设置 ASE_SCRIPTS_DIR。"
+  echo "首次运行 ase 时会生成 ~/.config/ase/config（默认 ASE_SCRIPTS_DIR 为 $share_dir/script-hub）。"
 }
 
 main "$@"
