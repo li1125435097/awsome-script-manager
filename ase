@@ -47,6 +47,16 @@ cmd_list() {
     (( len > max )) && max=$len
   done < <(ase_enumerate_scripts)
 
+  if [[ ${#names[@]} -eq 0 ]]; then
+    local red=""
+    if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+      red=$'\033[31m'
+      reset=$'\033[0m'
+    fi
+    echo "${red}ase list: (none)${reset}"
+    return 0
+  fi
+
   if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
     green=$'\033[32m'
     reset=$'\033[0m'
@@ -203,7 +213,12 @@ cmd_installed() {
   done < <(ase_read_install_names)
 
   if [[ ${#names[@]} -eq 0 ]]; then
-    echo "ase installed: (none)" >&2
+    local red=""
+    if [[ -t 2 && -z ${NO_COLOR:-} ]]; then
+      red=$'\033[31m'
+      reset=$'\033[0m'
+    fi
+    echo "${red}ase installed: (none)${reset}" >&2
     return 0
   fi
 
