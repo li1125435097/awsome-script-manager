@@ -116,6 +116,11 @@ copy_tree() {
     fi
   done
   chmod +x "$dest/ase" 2>/dev/null || true
+  local hub_script
+  for hub_script in "$dest/script-hub"/*; do
+    [[ -f $hub_script ]] || continue
+    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && chmod +x "$hub_script" 2>/dev/null || true
+  done
 }
 
 # True if the current user can create/write under share (parent may not exist yet).
@@ -146,6 +151,11 @@ clone_repo() {
     git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"
   fi
   chmod +x "$dest/ase" 2>/dev/null || true
+  local hub_script
+  for hub_script in "$dest/script-hub"/*; do
+    [[ -f $hub_script ]] || continue
+    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && chmod +x "$hub_script" 2>/dev/null || true
+  done
 }
 
 clone_repo_as_root() {
@@ -165,6 +175,11 @@ clone_repo_as_root() {
     run_as_root git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"
   fi
   run_as_root chmod +x "$dest/ase" 2>/dev/null || true
+  local hub_script
+  for hub_script in "$dest/script-hub"/*; do
+    [[ -f $hub_script ]] || continue
+    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && run_as_root chmod +x "$hub_script" 2>/dev/null || true
+  done
 }
 
 copy_tree_as_root() {
@@ -178,6 +193,11 @@ copy_tree_as_root() {
     fi
   done
   run_as_root chmod +x "$dest/ase" 2>/dev/null || true
+  local hub_script
+  for hub_script in "$dest/script-hub"/*; do
+    [[ -f $hub_script ]] || continue
+    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && run_as_root chmod +x "$hub_script" 2>/dev/null || true
+  done
 }
 
 install_to_share() {

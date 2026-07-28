@@ -1,5 +1,5 @@
-# Print current local time as ISO-8601
 #!/usr/bin/env bash
+# Print current local time as ISO-8601
 set -euo pipefail
 
 if date --version >/dev/null 2>&1; then

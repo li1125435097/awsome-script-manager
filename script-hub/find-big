@@ -1,5 +1,5 @@
-# Find largest regular files under a path (default .)
 #!/usr/bin/env bash
+# Find largest regular files under a path (default .)
 set -euo pipefail
 
 root="${1:-.}"

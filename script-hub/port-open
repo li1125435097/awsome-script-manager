@@ -1,5 +1,5 @@
-# Check whether a TCP port is listening on localhost
 #!/usr/bin/env bash
+# Check whether a TCP port is listening on localhost
 set -euo pipefail
 
 port="${1:-}"

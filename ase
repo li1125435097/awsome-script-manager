@@ -51,7 +51,7 @@ cmd_list() {
   fi
 
   for name in "${names[@]}"; do
-    intro=$(head -n1 "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
+    intro=$(ase_script_description_line "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
     if [[ -z $intro ]]; then
       intro="(empty)"
     fi
@@ -182,12 +182,12 @@ cmd_install() {
     if [[ ! -w $ASE_SYSTEM_BIN ]] 2>/dev/null; then
       ase_die "cannot write to $ASE_SYSTEM_BIN; try: sudo ASE_CONFIG=\${ASE_CONFIG:-\$HOME/.config/ase/config} ase install $name -a"
     fi
-    ln -sf "$canon" "$ASE_SYSTEM_BIN/$name"
+    ase_install_bin_entry "$ASE_SYSTEM_BIN" "$name" "$canon"
     echo "installed $name -> $ASE_SYSTEM_BIN/$name" >&2
     ase_warn_path_missing "$ASE_SYSTEM_BIN"
   else
     mkdir -p "$ASE_BIN_USER"
-    ln -sf "$canon" "$ASE_BIN_USER/$name"
+    ase_install_bin_entry "$ASE_BIN_USER" "$name" "$canon"
     echo "installed $name -> $ASE_BIN_USER/$name" >&2
     ase_warn_path_missing "$ASE_BIN_USER"
   fi
@@ -201,32 +201,14 @@ cmd_remove() {
 
   local script_path="$ASE_SCRIPTS_DIR/$name"
   local canon=""
-  local hash=""
   if [[ -f $script_path ]]; then
     canon=$(ase_canonical_path "$script_path")
-    if command -v md5sum >/dev/null 2>&1; then
-      hash=$(md5sum "$script_path" | awk '{print $1}')
-    fi
   fi
 
-  local bindir link_path link_hash dest
+  local bindir link_path
   for bindir in "$ASE_BIN_USER" "$ASE_SYSTEM_BIN"; do
     link_path="$bindir/$name"
-    [[ -e $link_path || -L $link_path ]] || continue
-    if [[ -L $link_path ]]; then
-      dest=$(readlink "$link_path" 2>/dev/null || true)
-      if [[ "$dest" == "$canon" || "$dest" == "$script_path" || "$dest" == "$ASE_SCRIPTS_DIR/$name" ]]; then
-        rm -f "$link_path"
-      elif [[ -n $canon ]]; then
-        ase_unlink_if_points_to "$link_path" "$canon"
-      fi
-    elif [[ -f $link_path && -n $hash ]] && command -v md5sum >/dev/null 2>&1; then
-      link_hash=$(md5sum "$link_path" | awk '{print $1}')
-      if [[ $link_hash == "$hash" ]]; then
-        rm -f "$link_path"
-      fi
-    elif [[ -f $link_path && -z $hash ]]; then
-      rm -f "$link_path"
+    if ase_remove_bin_entry_if_matches "$link_path" "$canon" "$script_path"; then
       echo "removed $link_path" >&2
     fi
   done

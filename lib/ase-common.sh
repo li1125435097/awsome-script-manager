@@ -142,9 +142,76 @@ ase_resolve_script_path() {
 
 ase_maybe_chmod_executable() {
   local file=$1
-  if [[ -f $file ]] && head -c 2 "$file" 2>/dev/null | grep -q '^#!'; then
+  [[ -f $file ]] || return 0
+  if head -n1 "$file" 2>/dev/null | grep -qE '^#!'; then
     chmod +x "$file" 2>/dev/null || true
   fi
+}
+
+ase_script_description_line() {
+  local file=$1
+  local first
+  first=$(head -n1 "$file" 2>/dev/null || true)
+  if [[ $first == '#!'* ]]; then
+    head -n2 "$file" | tail -n1
+  else
+    printf '%s\n' "$first"
+  fi
+}
+
+ase_script_first_line_is_shebang() {
+  head -n1 "$1" 2>/dev/null | grep -qE '^#!'
+}
+
+ase_install_bin_entry() {
+  local bindir=$1 name=$2 canon=$3
+  local dest="$bindir/$name"
+
+  if ase_script_first_line_is_shebang "$canon"; then
+    ase_maybe_chmod_executable "$canon"
+    ln -sf "$canon" "$dest"
+  else
+    {
+      echo '#!/usr/bin/env bash'
+      printf 'exec bash %q "$@"\n' "$canon"
+    } >"$dest"
+    chmod +x "$dest"
+  fi
+}
+
+ase_remove_bin_entry_if_matches() {
+  local entry=$1 canon=$2 script_path=$3
+  [[ -e $entry || -L $entry ]] || return 1
+
+  if [[ -L $entry ]]; then
+    local dest
+    dest=$(readlink "$entry" 2>/dev/null || true)
+    if [[ "$dest" == "$canon" || "$dest" == "$script_path" ]]; then
+      rm -f "$entry"
+      return 0
+    fi
+    if [[ -n $canon ]]; then
+      ase_unlink_if_points_to "$entry" "$canon" && return 0
+    fi
+    return 1
+  fi
+
+  if [[ -f $entry ]] && ase_script_first_line_is_shebang "$entry"; then
+    local entry_canon
+    entry_canon=$(ase_canonical_path "$entry" 2>/dev/null) || true
+    if [[ -n $entry_canon && ( $entry_canon == "$canon" || $entry_canon == "$script_path" ) ]]; then
+      rm -f "$entry"
+      return 0
+    fi
+  fi
+
+  if [[ -f $entry ]] && head -n1 "$entry" 2>/dev/null | grep -qE '^#!/usr/bin/env bash$'; then
+    if grep -Fq "$(printf 'exec bash %q' "$canon")" "$entry" 2>/dev/null; then
+      rm -f "$entry"
+      return 0
+    fi
+  fi
+  return 1
 }
 
 ase_git_remote_ref() {

@@ -63,7 +63,7 @@ Environment variables override the config file.
 | `ASE_BIN_USER` | User install dir (default: `~/bin`) |
 | `ASE_CONFIG` | Path to config file |
 
-Each script’s **first line** is treated as its short description (shown by `ase list`).
+Each script’s **second line** (or first line if there is no shebang) is its short description for `ase list`. Use `#!/usr/bin/env bash` on the first line so installed commands can run directly.
 
 ## Commands
 

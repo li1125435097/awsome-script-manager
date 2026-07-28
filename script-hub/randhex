@@ -1,5 +1,5 @@
-# Print random hex bytes (default 16 bytes)
 #!/usr/bin/env bash
+# Print random hex bytes (default 16 bytes)
 set -euo pipefail
 
 bytes="${1:-16}"
