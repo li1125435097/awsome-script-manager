@@ -17,6 +17,22 @@ die() {
   exit 1
 }
 
+# curl | bash 时 stdin 是管道；交互从 /dev/tty 读，且不能 exec 替换 stdin（否则管道未读完会卡住 curl）。
+install_can_prompt() {
+  [[ -t 0 ]] && return 0
+  [[ -r /dev/tty && -w /dev/tty ]]
+}
+
+install_read() {
+  if [[ -t 0 ]]; then
+    read -r "$@"
+  elif [[ -r /dev/tty ]]; then
+    read -r "$@" </dev/tty
+  else
+    return 1
+  fi
+}
+
 prompt_yn() {
   local question=$1
   local default=${2:-n}
@@ -27,7 +43,7 @@ prompt_yn() {
     hint="[y/N]"
   fi
   while true; do
-    read -r -p "$question $hint " answer || true
+    install_read -p "$question $hint " answer || true
     answer=${answer:-$default}
     case ${answer,,} in
       y|yes) return 0 ;;
@@ -41,7 +57,7 @@ read_nonempty() {
   local prompt=$1
   local value=""
   while [[ -z $value ]]; do
-    read -r -p "$prompt" value || true
+    install_read -p "$prompt" value || true
     value=${value/#"${value%%[![:space:]]*}"}
     value=${value%"${value##*[![:space:]]}"}
     [[ -n $value ]] || echo "路径不能为空。"
@@ -72,19 +88,6 @@ detect_src_root() {
 path_under_home() {
   local path=$1
   [[ $path == "$HOME"/* || $path == "$HOME" ]]
-}
-
-# curl | bash 时 stdin 是管道，不是终端；从 /dev/tty 读入以便交互（未设 ASE_INSTALL_* 时）。
-ensure_interactive_stdin() {
-  if [[ -t 0 ]]; then
-    return 0
-  fi
-  if [[ -n ${ASE_INSTALL_BIN:-}${ASE_INSTALL_SCOPE:-} ]]; then
-    return 0
-  fi
-  if [[ -e /dev/tty ]]; then
-    exec </dev/tty
-  fi
 }
 
 is_system_bin_dir() {
@@ -232,8 +235,6 @@ path_hint() {
 main() {
   local src_root bin_dir share_dir custom scope
 
-  ensure_interactive_stdin
-
   src_root=$(detect_src_root "${BASH_SOURCE[0]:-}") || src_root=""
 
   if [[ -n ${ASE_INSTALL_BIN:-} ]]; then
@@ -255,7 +256,7 @@ main() {
         ;;
       *) die "ASE_INSTALL_SCOPE 应为 global 或 user" ;;
     esac
-  elif [[ -t 0 ]]; then
+  elif install_can_prompt; then
     echo "awsome-script-manager (ase) 安装程序"
     echo
 
@@ -271,7 +272,7 @@ main() {
       echo "  1) 当前用户 — 安装到 ~/bin"
       echo "  2) 全局     — 安装到 /usr/local/bin（可能需要 sudo）"
       while true; do
-        read -r -p "请选择 [1/2]（默认 1）：" scope || true
+        install_read -p "请选择 [1/2]（默认 1）：" scope || true
         scope=${scope:-1}
         case $scope in
           1)

@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ASE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_ase_script="${BASH_SOURCE[0]}"
+while [[ -L "$_ase_script" ]]; do
+  _ase_link_dir=$(cd "$(dirname "$_ase_script")" && pwd)
+  _ase_script=$(readlink "$_ase_script")
+  [[ $_ase_script != /* ]] && _ase_script="$_ase_link_dir/$_ase_script"
+done
+ASE_ROOT="$(cd "$(dirname "$_ase_script")" && pwd)"
 export ASE_DEFAULT_GIT_ROOT="$ASE_ROOT"
 # shellcheck source=lib/ase-common.sh
 source "$ASE_ROOT/lib/ase-common.sh"
