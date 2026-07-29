@@ -13,8 +13,8 @@ USER_BIN="${HOME}/bin"
 USER_SHARE="${HOME}/.local/share/ase"
 SHARE_SCRIPTS_REL="scripts"
 # script-hub 为远程脚本树，体积可能很大；安装时不复制/检出，用 ase pull 按需拉取 (remote script tree; not copied at install — use ase pull)
-INSTALL_SHARE_COPY_ITEMS=(ase lib completions data LICENSE README.md)
-INSTALL_SHARE_SPARSE_PATHS=(ase lib completions data LICENSE README.md install.sh)
+INSTALL_SHARE_COPY_ITEMS=(ase lib completions data algorithm LICENSE README.md)
+INSTALL_SHARE_SPARSE_PATHS=(ase lib completions data algorithm LICENSE README.md install.sh)
 
 die() {
   echo "install: $*" >&2
