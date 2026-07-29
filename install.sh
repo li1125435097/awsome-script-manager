@@ -11,7 +11,7 @@ GLOBAL_BIN="/usr/local/bin"
 GLOBAL_SHARE="/usr/local/share/ase"
 USER_BIN="${HOME}/bin"
 USER_SHARE="${HOME}/.local/share/ase"
-USER_SCRIPTS="${HOME}/scripts"
+SHARE_SCRIPTS_REL="scripts"
 
 die() {
   echo "install: $*" >&2
@@ -75,6 +75,12 @@ expand_home() {
   else
     printf '%s\n' "$p"
   fi
+}
+
+# Managed scripts live under ASE_GIT_ROOT (override with ASE_INSTALL_SCRIPTS).
+install_default_scripts_dir() {
+  local git_root=$1
+  expand_home "${ASE_INSTALL_SCRIPTS:-$git_root/$SHARE_SCRIPTS_REL}"
 }
 
 detect_src_root() {
@@ -238,8 +244,12 @@ chmod_scripts_in_dir() {
 # 本地 ./install.sh：脚本工作目录为 ~/scripts（内容来自仓库 script-hub）
 install_local_scripts_dir() {
   local src=$1
-  local dest
-  dest=$(expand_home "${ASE_INSTALL_SCRIPTS:-$USER_SCRIPTS}")
+  local dest git_root
+  git_root=$src
+  if command -v git >/dev/null 2>&1; then
+    git_root=$(git -C "$src" rev-parse --show-toplevel 2>/dev/null) || git_root=$src
+  fi
+  dest=$(install_default_scripts_dir "$git_root")
   [[ -d "$src/script-hub" ]] || return 0
   echo "install: 同步脚本到 $dest"
   mkdir -p "$dest"
@@ -255,10 +265,10 @@ install_write_ase_config() {
     echo "install: 保留已有配置 $cfg"
     return 0
   fi
-  scripts_dir=$(expand_home "${ASE_INSTALL_SCRIPTS:-$USER_SCRIPTS}")
   if command -v git >/dev/null 2>&1; then
     git_root=$(git -C "$git_root" rev-parse --show-toplevel 2>/dev/null) || true
   fi
+  scripts_dir=$(install_default_scripts_dir "$git_root")
   mkdir -p "$(dirname "$cfg")"
   mkdir -p "$scripts_dir"
   {
@@ -385,9 +395,9 @@ main() {
   echo "安装完成。可选：启用补全"
   echo "  source \"$share_dir/completions/ase.bash\""
   if [[ -n $src_root ]]; then
-    echo "本地安装：脚本目录为 $(expand_home "${ASE_INSTALL_SCRIPTS:-$USER_SCRIPTS}")（ase update 同步 script-hub.list，ase pull 拉取脚本）。"
+    echo "本地安装：脚本目录为 $(install_default_scripts_dir "$src_root")（ase update 同步 script-hub.list，ase pull 拉取脚本）。"
   else
-    echo "已写入 ~/.config/ase/config，脚本目录为 $(expand_home "${ASE_INSTALL_SCRIPTS:-$USER_SCRIPTS}")。"
+    echo "已写入 ~/.config/ase/config，脚本目录为 $(install_default_scripts_dir "$share_dir")。"
     echo "运行 ase update 同步 script-hub 索引，再用 ase pull <name> 拉取脚本。"
   fi
 }

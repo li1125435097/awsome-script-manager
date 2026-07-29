@@ -44,7 +44,7 @@ ase_write_default_config() {
     git_root=$(git -C "$git_root" rev-parse --show-toplevel 2>/dev/null) || git_root="${ASE_DEFAULT_GIT_ROOT:-}"
   fi
   if [[ -n $git_root ]]; then
-    scripts_dir="$HOME/scripts"
+    scripts_dir="$git_root/scripts"
   fi
 
   mkdir -p "$(dirname "$cfg")"
@@ -58,7 +58,8 @@ ase_write_default_config() {
       printf 'ASE_GIT_ROOT=%q\n' "$git_root"
       echo 'ASE_GIT_SCRIPTS_REL="script-hub"'
     else
-      echo 'ASE_SCRIPTS_DIR="$HOME/scripts"'
+      echo 'ASE_SCRIPTS_DIR="$HOME/.local/share/ase/scripts"'
+      echo 'ASE_GIT_ROOT="$HOME/.local/share/ase"'
     fi
     echo 'ASE_GIT_REMOTE="origin"'
     echo 'ASE_GIT_BRANCH="main"'

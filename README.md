@@ -45,7 +45,7 @@ Default config file: `~/.config/ase/config`
 Example `~/.config/ase/config`:
 
 ```bash
-ASE_SCRIPTS_DIR="$HOME/scripts"
+ASE_SCRIPTS_DIR="$HOME/src/awsome-script-manager/scripts"
 ASE_GIT_ROOT="$HOME/src/awsome-script-manager"
 ASE_GIT_REMOTE="origin"
 ASE_GIT_BRANCH="main"
