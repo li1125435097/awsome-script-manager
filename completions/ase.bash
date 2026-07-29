@@ -1,4 +1,4 @@
-# Bash completion for ase
+# Bash completion for ase (also asm, sm)
 # Usage: source /path/to/completions/ase.bash
 
 _ASE_COMPLETION_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -113,9 +113,20 @@ _ase() {
   esac
 }
 
+_ASE_CLI_NAMES=(ase asm sm)
+
 _ase_register_completions() {
-  local target
-  for target in ase "$_ASE_ROOT/ase" ./ase; do
+  local name target
+  for name in "${_ASE_CLI_NAMES[@]}"; do
+    complete -F _ase -o nospace "$name" 2>/dev/null || \
+      complete -F _ase "$name" 2>/dev/null || true
+    target=$(command -v "$name" 2>/dev/null) || true
+    if [[ -n $target && $target != "$name" ]]; then
+      complete -F _ase -o nospace "$target" 2>/dev/null || \
+        complete -F _ase "$target" 2>/dev/null || true
+    fi
+  done
+  for target in "$_ASE_ROOT/ase" ./ase; do
     complete -F _ase -o nospace "$target" 2>/dev/null || \
       complete -F _ase "$target" 2>/dev/null || true
   done
@@ -126,7 +137,11 @@ _ase_cli_binary() {
     printf '%s\n' "$_ASE_ROOT/ase"
     return 0
   fi
-  command -v ase 2>/dev/null
+  local name
+  for name in "${_ASE_CLI_NAMES[@]}"; do
+    command -v "$name" 2>/dev/null && return 0
+  done
+  return 1
 }
 
 _ase_install_cli_wrapper() {

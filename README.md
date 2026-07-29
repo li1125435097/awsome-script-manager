@@ -70,7 +70,7 @@ cd awsome-script-manager
 ln -sf /path/to/awsome-script-manager/ase ~/bin/ase
 ln -sf /path/to/awsome-script-manager/ase ~/bin/asm
 ln -sf /path/to/awsome-script-manager/ase ~/bin/sm
-source /path/to/awsome-script-manager/completions/ase.bash   # 可选：补全（仅注册 ase 补全）
+source /path/to/awsome-script-manager/completions/ase.bash   # 可选：补全（ase / asm / sm）
 ```
 
 ## 配置
@@ -103,7 +103,7 @@ ASE_BIN_USER="$HOME/bin"
 
 ## 命令
 
-以下子命令与短别名以 **`ase`** 为准；**`asm`**、**`sm`** 行为相同（Tab 补全目前针对 `ase` 命令名配置）。
+以下子命令与短别名以 **`ase`** 为准；**`asm`**、**`sm`** 行为相同。
 
 ```text
 ase list (ls, l)              列出 ASE_SCRIPTS_DIR 中的脚本及简介
@@ -151,7 +151,7 @@ ase run mytool -- --verbose
 - 全局：`/etc/profile.d/ase-completion.sh`、`/etc/bash_completion.d/ase`
 - 用户：`~/.bashrc` 中的 marked 块
 
-新开 shell 或重新登录后，`ase pull <Tab>`、`ase install <Tab>` 等可用。  
+新开 shell 或重新登录后，`ase` / `asm` / `sm` 的子命令与参数均可 Tab 补全（例如 `ase pull <Tab>`、`sm install <Tab>`）。  
 升级旧版本时可再运行一次 `install.sh`，或手动 source `completions/ase.bash`。
 
 ## 卸载 ase（`uninstallme`）
