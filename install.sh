@@ -12,7 +12,7 @@ GLOBAL_SHARE="/usr/local/share/ase"
 USER_BIN="${HOME}/bin"
 USER_SHARE="${HOME}/.local/share/ase"
 SHARE_SCRIPTS_REL="scripts"
-# script-hub 为远程脚本树，体积可能很大；安装时不复制/检出，用 ase pull 按需拉取
+# script-hub 为远程脚本树，体积可能很大；安装时不复制/检出，用 ase pull 按需拉取 (remote script tree; not copied at install — use ase pull)
 INSTALL_SHARE_COPY_ITEMS=(ase lib completions data LICENSE README.md)
 INSTALL_SHARE_SPARSE_PATHS=(ase lib completions data LICENSE README.md install.sh)
 
@@ -21,7 +21,7 @@ die() {
   exit 1
 }
 
-# curl | bash 时 stdin 是管道；交互从 /dev/tty 读，且不能 exec 替换 stdin（否则管道未读完会卡住 curl）。
+# curl | bash 时 stdin 是管道；交互从 /dev/tty 读，且不能 exec 替换 stdin（否则管道未读完会卡住 curl）(pipe install: read prompts from /dev/tty)
 install_can_prompt() {
   [[ -t 0 ]] && return 0
   [[ -r /dev/tty && -w /dev/tty ]]
@@ -52,7 +52,7 @@ prompt_yn() {
     case ${answer,,} in
       y|yes) return 0 ;;
       n|no) return 1 ;;
-      *) echo "请输入 y 或 n。" ;;
+      *) echo "请输入 y 或 n。(Please enter y or n.)" ;;
     esac
   done
 }
@@ -64,7 +64,7 @@ read_nonempty() {
     install_read -p "$prompt" value || true
     value=${value/#"${value%%[![:space:]]*}"}
     value=${value%"${value##*[![:space:]]}"}
-    [[ -n $value ]] || echo "路径不能为空。"
+    [[ -n $value ]] || echo "路径不能为空。(Path cannot be empty.)"
   done
   printf '%s\n' "$value"
 }
@@ -111,7 +111,7 @@ run_as_root() {
   elif command -v sudo >/dev/null 2>&1; then
     sudo "$@"
   else
-    die "需要 root 权限写入 $*，请使用 sudo 或以 root 运行此脚本。"
+    die "需要 root 权限写入 $*，请使用 sudo 或以 root 运行此脚本。(Root privileges required; use sudo or run as root.)"
   fi
 }
 
@@ -157,7 +157,7 @@ install_share_writable() {
 clone_repo() {
   local dest=$1
   if ! command -v git >/dev/null 2>&1; then
-    die "未找到 git，请先安装 git 或在本仓库目录内运行 ./install.sh"
+    die "未找到 git，请先安装 git 或在本仓库目录内运行 ./install.sh。(git not found; install git or run ./install.sh from a clone.)"
   fi
   mkdir -p "$(dirname "$dest")"
   if [[ -d "$dest/.git" ]]; then
@@ -174,7 +174,7 @@ clone_repo() {
     elif git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"; then
       install_apply_sparse_checkout "$dest" 0
     else
-      die "git clone 失败: $REPO_URL"
+      die "git clone 失败 (git clone failed): $REPO_URL"
     fi
   fi
   chmod +x "$dest/ase" 2>/dev/null || true
@@ -183,7 +183,7 @@ clone_repo() {
 clone_repo_as_root() {
   local dest=$1
   if ! command -v git >/dev/null 2>&1; then
-    die "未找到 git，请先安装 git"
+    die "未找到 git，请先安装 git。(git not found; install git first.)"
   fi
   run_as_root mkdir -p "$(dirname "$dest")"
   if run_as_root test -d "$dest/.git"; then
@@ -201,7 +201,7 @@ clone_repo_as_root() {
     elif run_as_root git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"; then
       install_apply_sparse_checkout "$dest" 1
     else
-      die "git clone 失败: $REPO_URL"
+      die "git clone 失败 (git clone failed): $REPO_URL"
     fi
   fi
   run_as_root chmod +x "$dest/ase" 2>/dev/null || true
@@ -225,20 +225,20 @@ install_to_share() {
   local src=${2:-}
 
   if [[ -n $src ]]; then
-    echo "install: 从本地复制到 $share"
+    echo "install: 从本地复制到 $share (copying from local tree to $share)"
     if install_share_writable "$share"; then
       copy_tree "$src" "$share"
     elif path_under_home "$share"; then
-      die "无法写入 $share（请检查磁盘空间与目录权限）"
+      die "无法写入 $share（请检查磁盘空间与目录权限）(Cannot write to $share; check disk space and permissions)"
     else
       copy_tree_as_root "$src" "$share"
     fi
   else
-    echo "install: 从 $REPO_URL ($REPO_BRANCH) 安装到 $share"
+    echo "install: 从 $REPO_URL ($REPO_BRANCH) 安装到 $share (installing from remote to $share)"
     if install_share_writable "$share"; then
       clone_repo "$share"
     elif path_under_home "$share"; then
-      die "无法写入 $share（请检查磁盘空间与目录权限）"
+      die "无法写入 $share（请检查磁盘空间与目录权限）(Cannot write to $share; check disk space and permissions)"
     else
       clone_repo_as_root "$share"
     fi
@@ -250,7 +250,7 @@ install_write_ase_config() {
   local cfg scripts_dir
   cfg=$(expand_home "${ASE_CONFIG:-$HOME/.config/ase/config}")
   if [[ -f $cfg ]]; then
-    echo "install: 保留已有配置 $cfg"
+    echo "install: 保留已有配置 $cfg (keeping existing config)"
     return 0
   fi
   if command -v git >/dev/null 2>&1; then
@@ -272,7 +272,7 @@ install_write_ase_config() {
       echo 'ASE_BIN_USER="$HOME/bin"'
     fi
   } >"$cfg"
-  echo "install: 已写入 $cfg（脚本目录 $scripts_dir）"
+  echo "install: 已写入 $cfg（脚本目录 $scripts_dir）(wrote config; scripts dir: $scripts_dir)"
 }
 
 link_ase() {
@@ -284,11 +284,11 @@ link_ase() {
     run_as_root mkdir -p "$bin_dir"
     run_as_root ln -sfn "$share/ase" "$link"
   else
-    mkdir -p "$bin_dir" || die "无法创建目录 $bin_dir"
-    [[ -w "$bin_dir" ]] || die "无法写入 $bin_dir"
+    mkdir -p "$bin_dir" || die "无法创建目录 $bin_dir (Cannot create directory $bin_dir)"
+    [[ -w "$bin_dir" ]] || die "无法写入 $bin_dir (Cannot write to $bin_dir)"
     ln -sfn "$share/ase" "$link"
   fi
-  echo "install: ase -> $link (指向 $share/ase)"
+  echo "install: ase -> $link (指向 $share/ase) (symlink points to $share/ase)"
 }
 
 path_hint() {
@@ -296,7 +296,7 @@ path_hint() {
   case ":${PATH}:" in
     *":$bin_dir:"*) ;;
     *)
-      echo "install: 请将 $bin_dir 加入 PATH，例如在 ~/.bashrc 中加入："
+      echo "install: 请将 $bin_dir 加入 PATH，例如在 ~/.bashrc 中加入：(Add $bin_dir to PATH, e.g. in ~/.bashrc:)"
       echo "  export PATH=\"$bin_dir:\$PATH\""
       ;;
   esac
@@ -329,7 +329,7 @@ install_global_completion() {
   printf '%s\n' "$content" | run_as_root tee "$profile_d" >/dev/null
   run_as_root chmod 755 "$profile_d"
   printf '%s\n' "$content" | run_as_root tee "$bash_comp_d" >/dev/null
-  echo "install: 已配置 Tab 补全（登录后自动生效）："
+  echo "install: 已配置 Tab 补全（登录后自动生效）(Tab completion enabled for login shells):"
   echo "  $profile_d"
   echo "  $bash_comp_d"
 }
@@ -370,7 +370,7 @@ install_bashrc_completion() {
       echo "$end"
     } >> "$bashrc"
   fi
-  echo "install: 已配置 Tab 补全（写入 $bashrc，新开 shell 生效）"
+  echo "install: 已配置 Tab 补全（写入 $bashrc，新开 shell 生效）(Tab completion added to $bashrc)"
 }
 
 install_enable_completion() {
@@ -378,7 +378,7 @@ install_enable_completion() {
   local comp_file="$share_dir/completions/ase.bash"
 
   [[ -f $comp_file ]] || {
-    echo "install: 跳过补全（未找到 $comp_file）"
+    echo "install: 跳过补全（未找到 $comp_file）(Skipping completion; file not found)"
     return 0
   }
 
@@ -411,14 +411,14 @@ main() {
         bin_dir=$(expand_home "${ASE_BIN_USER:-$USER_BIN}")
         share_dir="${ASE_INSTALL_SHARE:-$USER_SHARE}"
         ;;
-      *) die "ASE_INSTALL_SCOPE 应为 global 或 user" ;;
+      *) die "ASE_INSTALL_SCOPE 应为 global 或 user (ASE_INSTALL_SCOPE must be global or user)" ;;
     esac
   elif install_can_prompt; then
-    echo "awsome-script-manager (ase) 安装程序"
+    echo "awsome-script-manager (ase) 安装程序 (installer)"
     echo
 
-    if prompt_yn "是否指定安装位置（可执行文件目录）？" n; then
-      custom=$(read_nonempty "请输入 bin 目录路径（例如 /opt/bin 或 ~/bin）：")
+    if prompt_yn "是否指定安装位置？默认否 (Specify a custom install location? default: no)" n; then
+      custom=$(read_nonempty "请输入 bin 目录路径，例如 /opt/bin 或 ~/bin (Enter bin directory path, e.g. /opt/bin or ~/bin): ")
       bin_dir=$(expand_home "$custom")
       if [[ $bin_dir == "$GLOBAL_BIN" || $bin_dir == /usr/local/bin || $bin_dir == /usr/bin ]]; then
         share_dir=$GLOBAL_SHARE
@@ -426,10 +426,10 @@ main() {
         share_dir=$USER_SHARE
       fi
     else
-      echo "  1) 当前用户 — 安装到 ~/bin"
-      echo "  2) 全局     — 安装到 /usr/local/bin（可能需要 sudo）"
+      echo "  1) 当前用户 — 安装到 ~/bin (Current user — install to ~/bin)"
+      echo "  2) 全局     — 安装到 /usr/local/bin（可能需要 sudo）(System-wide — /usr/local/bin, may need sudo)"
       while true; do
-        install_read -p "请选择 [1/2]（默认 1）：" scope || true
+        install_read -p "请选择 [1/2]，默认 1 (Choose [1/2], default 1): " scope || true
         scope=${scope:-1}
         case $scope in
           1)
@@ -442,14 +442,14 @@ main() {
             share_dir=$GLOBAL_SHARE
             break
             ;;
-          *) echo "请输入 1 或 2。" ;;
+          *) echo "请输入 1 或 2。(Please enter 1 or 2.)" ;;
         esac
       done
     fi
   else
     bin_dir=$(expand_home "$USER_BIN")
     share_dir=$USER_SHARE
-    echo "install: 非交互模式，默认安装到 $bin_dir（可设置 ASE_INSTALL_SCOPE 或 ASE_INSTALL_BIN）"
+    echo "install: 非交互模式，默认安装到 $bin_dir（可设置 ASE_INSTALL_SCOPE 或 ASE_INSTALL_BIN）(Non-interactive; default install to $bin_dir; set ASE_INSTALL_SCOPE or ASE_INSTALL_BIN)"
   fi
 
   if [[ -n ${ASE_INSTALL_SHARE:-} ]]; then
@@ -469,16 +469,18 @@ main() {
   fi
 
   echo
-  echo "安装完成。"
+  local scripts_dir_hint
+  scripts_dir_hint=$(install_default_scripts_dir "${src_root:-$share_dir}")
+  echo "安装完成。(Installation complete.)"
   if [[ ${ASE_INSTALL_COMPLETION:-1} == 0 ]]; then
-    echo "补全未自动配置（ASE_INSTALL_COMPLETION=0）。可手动："
+    echo "补全未自动配置（ASE_INSTALL_COMPLETION=0）。可手动：(Completion not configured; load manually:)"
     echo "  source \"$share_dir/completions/ase.bash\""
   else
-    echo "若 Tab 补全无效，请确认是交互式 bash 且补全文件存在；当前 shell 可执行："
+    echo "若 Tab 补全无效，请确认是交互式 bash 且补全文件存在；当前 shell 可执行：(If Tab completion fails, use an interactive bash; for this shell:)"
     echo "  source \"$share_dir/completions/ase.bash\""
   fi
-  echo "脚本目录为 $(install_default_scripts_dir "${src_root:-$share_dir}")。"
-  echo "安装未包含 script-hub；请先 ase update，再用 ase pull <name> 按需拉取脚本。"
+  echo "脚本目录为 $scripts_dir_hint。(Scripts directory: $scripts_dir_hint)"
+  echo "安装未包含 script-hub；请先 ase update，再用 ase pull <name> 按需拉取脚本。(script-hub not included; run ase update, then ase pull <name> as needed.)"
 }
 
 main "$@"
