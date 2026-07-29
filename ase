@@ -407,7 +407,7 @@ cmd_uninstallme() {
   done
   echo "  config: $cfg_dir" >&2
   echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc block" >&2
-  echo "  ase symlinks under: ${bin_dirs[*]}" >&2
+  echo "  ase/asm/sm symlinks under: ${bin_dirs[*]}" >&2
   for s in "${share_dirs[@]}"; do
     while IFS= read -r name; do
       [[ -n $name ]] || continue
@@ -439,10 +439,12 @@ cmd_uninstallme() {
   for s in "${share_dirs[@]}"; do
     for bindir in "${bin_dirs[@]}"; do
       [[ -n $bindir ]] || continue
-      link_path="$bindir/ase"
-      if ase_remove_ase_bin_symlink "$link_path" "$s"; then
-        echo "ase uninstallme: removed $link_path" >&2
-      fi
+      for name in ase asm sm; do
+        link_path="$bindir/$name"
+        if ase_remove_ase_bin_symlink "$link_path" "$s"; then
+          echo "ase uninstallme: removed $link_path" >&2
+        fi
+      done
     done
   done
 
@@ -454,7 +456,9 @@ cmd_uninstallme() {
     echo "ase uninstallme: removed $cfg_dir" >&2
   fi
 
-  ase_forget_cmd_hash ase
+  for name in ase asm sm; do
+    ase_forget_cmd_hash "$name"
+  done
 
   for s in "${share_dirs[@]}"; do
     found=0

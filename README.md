@@ -2,11 +2,13 @@
 
 纯 Bash 实现的命令行工具：从 Git 仓库的 **script-hub** 按需拉取脚本，安装到 `PATH`，并在本地目录统一管理。
 
+安装后可在 PATH 中使用 **`ase`**，或同入口的短别名 **`asm`**、**`sm`**（均为指向同一程序的符号链接）。
+
 ## 特性
 
 - 通过 `data/script-hub.list` 索引远程脚本，不一次性克隆整棵 script-hub 树
 - `update` / `search` / `pull` 与 `install` / `remove` 分工清晰
-- 用户级（`~/bin`）或系统级（`/usr/local/bin`）安装
+- 用户级（`~/bin`）或系统级（`/usr/local/bin`）安装；`install.sh` 会同时创建 `ase`、`asm`、`sm` 三个命令链接
 - Bash Tab 补全（安装脚本可自动配置）
 - `uninstallme` 可干净卸载 ase 本身（不删除你已拉取的脚本文件）
 
@@ -41,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/li1125435097/awsome-script-manager/
 ```
 
 安装程序会询问 bin 目录；不指定时可选 **当前用户**（`~/bin`）或 **全局**（`/usr/local/bin`）。  
-程序文件默认落在 `~/.local/share/ase` 或 `/usr/local/share/ase`。**不会**复制远程 `script-hub` 大目录，脚本请用 `ase pull` 按需拉取。
+程序文件默认落在 `~/.local/share/ase` 或 `/usr/local/share/ase`；在 bin 目录中会创建 **`ase`、`asm`、`sm`** 三个符号链接，均指向 share 中的 `ase` 入口。**不会**复制远程 `script-hub` 大目录，脚本请用 `ase pull`（或 `asm` / `sm`）按需拉取。
 
 管道安装会从终端读取选项；完全非交互可设置：
 
@@ -62,11 +64,13 @@ cd awsome-script-manager
 
 ### 开发 / 临时使用
 
-将仓库加入 `PATH`，或只链入口：
+将仓库加入 `PATH`，或链入口（与 `install.sh` 一致时可建三个别名）：
 
 ```bash
 ln -sf /path/to/awsome-script-manager/ase ~/bin/ase
-source /path/to/awsome-script-manager/completions/ase.bash   # 可选：补全
+ln -sf /path/to/awsome-script-manager/ase ~/bin/asm
+ln -sf /path/to/awsome-script-manager/ase ~/bin/sm
+source /path/to/awsome-script-manager/completions/ase.bash   # 可选：补全（仅注册 ase 补全）
 ```
 
 ## 配置
@@ -98,6 +102,8 @@ ASE_BIN_USER="$HOME/bin"
 本地开发克隆本仓库时，常见布局为 `ASE_SCRIPTS_DIR=<repo>/scripts`，`ASE_GIT_ROOT=<repo>`。
 
 ## 命令
+
+以下子命令与短别名以 **`ase`** 为准；**`asm`**、**`sm`** 行为相同（Tab 补全目前针对 `ase` 命令名配置）。
 
 ```text
 ase list (ls, l)              列出 ASE_SCRIPTS_DIR 中的脚本及简介
@@ -153,7 +159,7 @@ ase run mytool -- --verbose
 移除 **ase 程序安装**，**不会**删除 `ASE_SCRIPTS_DIR` 里你已 pull 的脚本：
 
 - `data/install.list` 中记录在 `~/bin`、`/usr/local/bin` 等的脚本链接
-- `ase` 自身在 PATH 中的链接
+- **`ase`、`asm`、`sm`** 在 PATH 中的程序链接
 - share 目录（`~/.local/share/ase` 或 `/usr/local/share/ase` 等）
 - `~/.config/ase` 与补全相关文件
 

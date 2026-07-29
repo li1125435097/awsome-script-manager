@@ -278,17 +278,24 @@ install_write_ase_config() {
 link_ase() {
   local share=$1
   local bin_dir=$2
-  local link="$bin_dir/ase"
+  local name link
 
   if is_system_bin_dir "$bin_dir"; then
     run_as_root mkdir -p "$bin_dir"
-    run_as_root ln -sfn "$share/ase" "$link"
   else
     mkdir -p "$bin_dir" || die "无法创建目录 $bin_dir (Cannot create directory $bin_dir)"
     [[ -w "$bin_dir" ]] || die "无法写入 $bin_dir (Cannot write to $bin_dir)"
-    ln -sfn "$share/ase" "$link"
   fi
-  echo "install: ase -> $link (指向 $share/ase) (symlink points to $share/ase)"
+
+  for name in ase asm sm; do
+    link="$bin_dir/$name"
+    if is_system_bin_dir "$bin_dir"; then
+      run_as_root ln -sfn "$share/ase" "$link"
+    else
+      ln -sfn "$share/ase" "$link"
+    fi
+    echo "install: $name -> $link (指向 $share/ase) (symlink points to $share/ase)"
+  done
 }
 
 path_hint() {
