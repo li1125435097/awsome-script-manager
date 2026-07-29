@@ -272,7 +272,8 @@ ase_read_script_hub_names() {
   local list_file
   list_file=$(ase_script_hub_list_path)
   [[ -f $list_file ]] || return 1
-  grep -vE '^[[:space:]]*(#|$)' "$list_file" | sed 's/[[:space:]]*$//' | sed '/^$/d'
+  grep -vE '^[[:space:]]*(#|$)' "$list_file" | sed 's/[[:space:]]*$//' | sed '/^$/d' |
+    awk -F'\t' 'NF >= 2 { print $2; next } { print }'
 }
 
 ase_install_list_add() {
