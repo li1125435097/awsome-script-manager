@@ -12,6 +12,9 @@ GLOBAL_SHARE="/usr/local/share/ase"
 USER_BIN="${HOME}/bin"
 USER_SHARE="${HOME}/.local/share/ase"
 SHARE_SCRIPTS_REL="scripts"
+# script-hub 为远程脚本树，体积可能很大；安装时不复制/检出，用 ase pull 按需拉取
+INSTALL_SHARE_COPY_ITEMS=(ase lib completions data LICENSE README.md)
+INSTALL_SHARE_SPARSE_PATHS=(ase lib completions data LICENSE README.md install.sh)
 
 die() {
   echo "install: $*" >&2
@@ -112,22 +115,31 @@ run_as_root() {
   fi
 }
 
+install_apply_sparse_checkout() {
+  local dest=$1
+  local as_root=${2:-0}
+  if [[ $as_root -eq 1 ]]; then
+    run_as_root git -C "$dest" sparse-checkout init --cone
+    run_as_root git -C "$dest" sparse-checkout set "${INSTALL_SHARE_SPARSE_PATHS[@]}"
+    run_as_root rm -rf "$dest/script-hub"
+  else
+    git -C "$dest" sparse-checkout init --cone
+    git -C "$dest" sparse-checkout set "${INSTALL_SHARE_SPARSE_PATHS[@]}"
+    rm -rf "$dest/script-hub"
+  fi
+}
+
 copy_tree() {
   local src=$1
   local dest=$2
   mkdir -p "$dest"
   local item
-  for item in ase lib completions script-hub data LICENSE README.md; do
+  for item in "${INSTALL_SHARE_COPY_ITEMS[@]}"; do
     if [[ -e "$src/$item" ]]; then
       cp -a "$src/$item" "$dest/"
     fi
   done
   chmod +x "$dest/ase" 2>/dev/null || true
-  local hub_script
-  for hub_script in "$dest/script-hub"/*; do
-    [[ -f $hub_script ]] || continue
-    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && chmod +x "$hub_script" 2>/dev/null || true
-  done
 }
 
 # True if the current user can create/write under share (parent may not exist yet).
@@ -151,18 +163,21 @@ clone_repo() {
   if [[ -d "$dest/.git" ]]; then
     git -C "$dest" fetch origin "$REPO_BRANCH"
     git -C "$dest" checkout "$REPO_BRANCH" 2>/dev/null || git -C "$dest" checkout -B "$REPO_BRANCH" "origin/$REPO_BRANCH"
+    install_apply_sparse_checkout "$dest" 0
     git -C "$dest" pull --ff-only origin "$REPO_BRANCH" 2>/dev/null || \
       git -C "$dest" reset --hard "origin/$REPO_BRANCH"
+    install_apply_sparse_checkout "$dest" 0
   else
     rm -rf "$dest"
-    git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"
+    if git clone --depth 1 --branch "$REPO_BRANCH" --filter=blob:none --sparse "$REPO_URL" "$dest" 2>/dev/null; then
+      install_apply_sparse_checkout "$dest" 0
+    elif git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"; then
+      install_apply_sparse_checkout "$dest" 0
+    else
+      die "git clone 失败: $REPO_URL"
+    fi
   fi
   chmod +x "$dest/ase" 2>/dev/null || true
-  local hub_script
-  for hub_script in "$dest/script-hub"/*; do
-    [[ -f $hub_script ]] || continue
-    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && chmod +x "$hub_script" 2>/dev/null || true
-  done
 }
 
 clone_repo_as_root() {
@@ -175,18 +190,21 @@ clone_repo_as_root() {
     run_as_root git -C "$dest" fetch origin "$REPO_BRANCH"
     run_as_root git -C "$dest" checkout "$REPO_BRANCH" 2>/dev/null || \
       run_as_root git -C "$dest" checkout -B "$REPO_BRANCH" "origin/$REPO_BRANCH"
+    install_apply_sparse_checkout "$dest" 1
     run_as_root git -C "$dest" pull --ff-only origin "$REPO_BRANCH" 2>/dev/null || \
       run_as_root git -C "$dest" reset --hard "origin/$REPO_BRANCH"
+    install_apply_sparse_checkout "$dest" 1
   else
     run_as_root rm -rf "$dest"
-    run_as_root git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"
+    if run_as_root git clone --depth 1 --branch "$REPO_BRANCH" --filter=blob:none --sparse "$REPO_URL" "$dest" 2>/dev/null; then
+      install_apply_sparse_checkout "$dest" 1
+    elif run_as_root git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$dest"; then
+      install_apply_sparse_checkout "$dest" 1
+    else
+      die "git clone 失败: $REPO_URL"
+    fi
   fi
   run_as_root chmod +x "$dest/ase" 2>/dev/null || true
-  local hub_script
-  for hub_script in "$dest/script-hub"/*; do
-    [[ -f $hub_script ]] || continue
-    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && run_as_root chmod +x "$hub_script" 2>/dev/null || true
-  done
 }
 
 copy_tree_as_root() {
@@ -194,17 +212,12 @@ copy_tree_as_root() {
   local dest=$2
   local item
   run_as_root mkdir -p "$dest"
-  for item in ase lib completions script-hub data LICENSE README.md; do
+  for item in "${INSTALL_SHARE_COPY_ITEMS[@]}"; do
     if [[ -e "$src/$item" ]]; then
       run_as_root cp -a "$src/$item" "$dest/"
     fi
   done
   run_as_root chmod +x "$dest/ase" 2>/dev/null || true
-  local hub_script
-  for hub_script in "$dest/script-hub"/*; do
-    [[ -f $hub_script ]] || continue
-    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && run_as_root chmod +x "$hub_script" 2>/dev/null || true
-  done
 }
 
 install_to_share() {
@@ -230,31 +243,6 @@ install_to_share() {
       clone_repo_as_root "$share"
     fi
   fi
-}
-
-chmod_scripts_in_dir() {
-  local dir=$1
-  local hub_script
-  for hub_script in "$dir"/*; do
-    [[ -f $hub_script ]] || continue
-    head -n1 "$hub_script" 2>/dev/null | grep -qE '^#!' && chmod +x "$hub_script" 2>/dev/null || true
-  done
-}
-
-# 本地 ./install.sh：脚本工作目录为 ~/scripts（内容来自仓库 script-hub）
-install_local_scripts_dir() {
-  local src=$1
-  local dest git_root
-  git_root=$src
-  if command -v git >/dev/null 2>&1; then
-    git_root=$(git -C "$src" rev-parse --show-toplevel 2>/dev/null) || git_root=$src
-  fi
-  dest=$(install_default_scripts_dir "$git_root")
-  [[ -d "$src/script-hub" ]] || return 0
-  echo "install: 同步脚本到 $dest"
-  mkdir -p "$dest"
-  cp -a "$src/script-hub/." "$dest/"
-  chmod_scripts_in_dir "$dest"
 }
 
 install_write_ase_config() {
@@ -471,7 +459,6 @@ main() {
   install_to_share "$share_dir" "$src_root"
   link_ase "$share_dir" "$bin_dir"
   if [[ -n $src_root ]]; then
-    install_local_scripts_dir "$src_root"
     install_write_ase_config "$src_root"
   else
     install_write_ase_config "$share_dir"
@@ -490,12 +477,8 @@ main() {
     echo "若 Tab 补全无效，请确认是交互式 bash 且补全文件存在；当前 shell 可执行："
     echo "  source \"$share_dir/completions/ase.bash\""
   fi
-  if [[ -n $src_root ]]; then
-    echo "本地安装：脚本目录为 $(install_default_scripts_dir "$src_root")（ase update 同步 script-hub.list，ase pull 拉取脚本）。"
-  else
-    echo "已写入 ~/.config/ase/config，脚本目录为 $(install_default_scripts_dir "$share_dir")。"
-    echo "运行 ase update 同步 script-hub 索引，再用 ase pull <name> 拉取脚本。"
-  fi
+  echo "脚本目录为 $(install_default_scripts_dir "${src_root:-$share_dir}")。"
+  echo "安装未包含 script-hub；请先 ase update，再用 ase pull <name> 按需拉取脚本。"
 }
 
 main "$@"

@@ -47,14 +47,29 @@ _ase_hub_names() {
   printf '%s\n' "$names"
 }
 
+_ase_canonical_cmd() {
+  case "$1" in
+    i) echo install ;;
+    ls | l) echo list ;;
+    ud | u) echo update ;;
+    p) echo pull ;;
+    uninstall | rm | ui) echo remove ;;
+    r) echo run ;;
+    se | s) echo search ;;
+    id) echo installed ;;
+    *) echo "$1" ;;
+  esac
+}
+
 _ase() {
   local cur prev words cword
   _ase_init_words || return 0
 
-  local cmd="${words[1]:-}"
+  local cmd
+  cmd=$(_ase_canonical_cmd "${words[1]:-}")
 
   if (( cword == 1 )); then
-    COMPREPLY=($(compgen -W "list update search pull install remove installed run uninstallme help" -- "$cur"))
+    COMPREPLY=($(compgen -W "list ls l update ud u search se s pull p install i remove uninstall rm ui installed id run r uninstallme help" -- "$cur"))
     return 0
   fi
 
@@ -120,7 +135,9 @@ _ase_install_cli_wrapper() {
   bin=$(_ase_cli_binary) || return 0
   _ASE_CLI_BIN=$bin
   ase() {
-    if [[ ${1:-} == remove && $# -ge 2 ]]; then
+    local _ase_sub
+    _ase_sub=$(_ase_canonical_cmd "${1:-}")
+    if [[ $_ase_sub == remove && $# -ge 2 ]]; then
       local _ase_remove_name=$2
       "$_ASE_CLI_BIN" "$@"
       local _ase_remove_status=$?

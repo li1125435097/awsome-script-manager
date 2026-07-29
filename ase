@@ -16,16 +16,17 @@ usage() {
   cat <<'EOF'
 Usage: ase <command> [options] [args]
 
-Commands:
-  list                 List scripts (name and first-line description)
-  update               Sync data/script-hub.list from git remote
-  search <query>       Fuzzy-search script names in script-hub.list
-  pull <name> [...]    Pull script(s) from remote script-hub into ASE_SCRIPTS_DIR
-  install <name> [-a]  Symlink script to ~/bin (or /usr/local/bin with -a)
-  remove <name>        Remove installed symlinks from ~/bin and /usr/local/bin
-  installed            List scripts recorded in data/install.list
-  run <name> [-- args] Run a script
-  uninstallme [-y]     Remove ase install (bin links, share, config, completion hooks)
+Commands (aliases in parentheses):
+  list (ls, l)                 List scripts (name and first-line description)
+  update (ud, u)               Sync data/script-hub.list from git remote
+  search (se, s) <query>       Fuzzy-search script names in script-hub.list
+  pull (p) <name> [...]        Pull script(s) from remote script-hub into ASE_SCRIPTS_DIR
+  install (i) <name> [-a]        Symlink script to ~/bin (or /usr/local/bin with -a)
+  remove (uninstall, rm, ui) <name>
+                               Remove installed symlinks from ~/bin and /usr/local/bin
+  installed (id)               List scripts recorded in data/install.list
+  run (r) <name> [-- args]     Run a script
+  uninstallme [-y]             Remove ase install (bin links, share, config, completion hooks)
 
 Environment / config:
   ASE_SCRIPTS_DIR      Local scripts directory (required)
@@ -469,8 +470,25 @@ cmd_uninstallme() {
   echo "ase uninstallme: done (share removal runs in background after exit)" >&2
 }
 
+ase_normalize_cmd() {
+  case "$1" in
+    i) echo install ;;
+    ls | l) echo list ;;
+    ud | u) echo update ;;
+    p) echo pull ;;
+    uninstall | rm | ui) echo remove ;;
+    r) echo run ;;
+    se | s) echo search ;;
+    id) echo installed ;;
+    *) echo "$1" ;;
+  esac
+}
+
 main() {
-  case "${1:-}" in
+  local cmd
+  cmd=$(ase_normalize_cmd "${1:-}")
+
+  case "$cmd" in
     list) cmd_list ;;
     update) cmd_update "${@:2}" ;;
     search) cmd_search "${@:2}" ;;
