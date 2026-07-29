@@ -170,6 +170,17 @@ ase uninstallme -y   # 非交互
 
 涉及 `/etc` 的路径可能需要 `sudo`。share 目录会在命令退出后由后台任务删除（因当前进程可能正在该目录中运行）。
 
+## 开发：检索原型（独立实验）
+
+根目录有一套 **N-gram 并集检索** 原型，用于验证「查询词切 2/3/4 字子串 → 查记录文件 → 去重合并」，**不是**正式 `ase search` 行为。
+
+```bash
+./gen-search-records.sh              # 默认 data/search-records.tsv，10 万行
+./search-records.sh 端口             # 默认最多 100 条（相似度降序）
+./search-records.sh -l 500 端口      # 最多 500 条；-l 0 不限制
+./test-search-records.sh             # 本地冒烟与耗时（大文件不入库，见 .gitignore）
+```
+
 ## 仓库布局（简要）
 
 ```text
