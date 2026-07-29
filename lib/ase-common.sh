@@ -136,6 +136,22 @@ ase_load_config() {
   fi
 }
 
+# Source config if present; do not create or validate scripts/git layout.
+ase_try_source_config() {
+  local cfg="${ASE_CONFIG:-$HOME/.config/ase/config}"
+  [[ -f $cfg ]] || return 1
+  # shellcheck disable=SC1090
+  source "$cfg"
+  ASE_BIN_USER="${ASE_BIN_USER:-$HOME/bin}"
+  return 0
+}
+
+ase_read_install_names_from_file() {
+  local list_file=$1
+  [[ -f $list_file ]] || return 0
+  grep -vE '^[[:space:]]*(#|$)' "$list_file" | sed 's/[[:space:]]*$//' | sed '/^$/d'
+}
+
 ase_require_scripts_dir() {
   ase_load_config
   if [[ ! -d $ASE_SCRIPTS_DIR ]]; then
@@ -378,4 +394,185 @@ ase_unlink_if_points_to() {
   if [[ $abs_dest == "$target" ]]; then
     rm -f "$link_path"
   fi
+}
+
+ase_run_privileged() {
+  if [[ $(id -u) -eq 0 ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    ase_die "need root or sudo for: $*"
+  fi
+}
+
+ase_path_is_under() {
+  local path=$1
+  local root=$2
+  [[ -n $path && -n $root ]] || return 1
+  [[ $path == "$root" || $path == "$root"/* ]]
+}
+
+ase_resolve_executable_path() {
+  local cmd=$1
+  local path link_dir
+  [[ -n $cmd ]] || return 1
+  if [[ $cmd == /* ]]; then
+    path=$cmd
+  else
+    path=$(command -v "$cmd" 2>/dev/null) || return 1
+  fi
+  while [[ -L $path ]]; do
+    link_dir=$(cd "$(dirname "$path")" && pwd)
+    path=$(readlink "$path")
+    [[ $path == /* ]] || path="$link_dir/$path"
+  done
+  if [[ -f $path ]]; then
+    printf '%s/%s\n' "$(cd "$(dirname "$path")" && pwd -P)" "$(basename "$path")"
+    return 0
+  fi
+  return 1
+}
+
+ase_share_looks_installed() {
+  local dir=$1
+  [[ -f $dir/ase && -f $dir/lib/ase-common.sh ]]
+}
+
+ase_is_default_share_path() {
+  local d=$1
+  [[ $d == /usr/local/share/ase ]] && return 0
+  [[ $d == "$HOME/.local/share/ase" ]] && return 0
+  return 1
+}
+
+ase_should_remove_share_dir() {
+  local d=$1
+  local share_from_cmd=$2
+  ase_is_default_share_path "$d" && return 0
+  [[ -n $share_from_cmd && $d == "$share_from_cmd" ]] && return 0
+  if [[ -n ${ASE_GIT_ROOT:-} ]]; then
+    local git_root
+    git_root=$(ase_canonical_path "$ASE_GIT_ROOT" 2>/dev/null) || git_root=$ASE_GIT_ROOT
+    [[ $d == "$git_root" ]] && return 0
+  fi
+  return 1
+}
+
+ase_detect_share_from_command() {
+  local exe share
+  exe=$(ase_resolve_executable_path ase 2>/dev/null) || return 1
+  share=$(cd "$(dirname "$exe")" && pwd -P)
+  ase_share_looks_installed "$share" || return 1
+  printf '%s\n' "$share"
+}
+
+ase_bashrc_completion_begin='# >>> ase completion >>>'
+ase_bashrc_completion_end='# <<< ase completion <<<'
+
+ase_remove_bashrc_completion_block() {
+  local bashrc="${HOME}/.bashrc"
+  local begin=$ase_bashrc_completion_begin
+  local end=$ase_bashrc_completion_end
+  local tmp in_block=0 changed=0
+
+  [[ -f $bashrc ]] || return 0
+  grep -qF "$begin" "$bashrc" 2>/dev/null || return 0
+
+  tmp=$(mktemp)
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line == "$begin" ]]; then
+      in_block=1
+      changed=1
+      continue
+    fi
+    if (( in_block )); then
+      [[ $line == "$end" ]] && in_block=0
+      continue
+    fi
+    printf '%s\n' "$line"
+  done < "$bashrc" > "$tmp"
+  if (( changed )); then
+    mv "$tmp" "$bashrc"
+    echo "ase uninstallme: removed completion block from $bashrc" >&2
+  else
+    rm -f "$tmp"
+  fi
+}
+
+ase_remove_system_completion_hooks() {
+  local profile_d="/etc/profile.d/ase-completion.sh"
+  local bash_comp_d="/etc/bash_completion.d/ase"
+  local removed=0
+
+  if [[ -f $profile_d || -L $profile_d ]]; then
+    ase_run_privileged rm -f "$profile_d"
+    echo "ase uninstallme: removed $profile_d" >&2
+    removed=1
+  fi
+  if [[ -f $bash_comp_d || -L $bash_comp_d ]]; then
+    ase_run_privileged rm -f "$bash_comp_d"
+    echo "ase uninstallme: removed $bash_comp_d" >&2
+    removed=1
+  fi
+  (( removed )) || true
+}
+
+ase_remove_ase_bin_symlink() {
+  local link=$1
+  local share=$2
+  [[ -e $link || -L $link ]] || return 1
+  [[ -L $link ]] || return 1
+  local dest abs_dest share_ase
+  share_ase="$share/ase"
+  dest=$(readlink "$link" 2>/dev/null) || return 1
+  if [[ $dest == "$share_ase" ]]; then
+    rm -f "$link"
+    return 0
+  fi
+  if [[ $dest == /* ]]; then
+    abs_dest=$(ase_canonical_path "$dest" 2>/dev/null) || abs_dest=$dest
+  else
+    abs_dest=$(ase_canonical_path "$(dirname "$link")/$dest" 2>/dev/null) || return 1
+  fi
+  if [[ $abs_dest == "$share_ase" ]] || ase_path_is_under "$(dirname "$abs_dest")" "$share"; then
+    rm -f "$link"
+    return 0
+  fi
+  return 1
+}
+
+ase_remove_script_bin_links() {
+  local name=$1
+  local script_path=$2
+  local canon="" bindir link_path
+
+  ASE_BIN_USER="${ASE_BIN_USER:-$HOME/bin}"
+  if [[ -f $script_path ]]; then
+    canon=$(ase_canonical_path "$script_path" 2>/dev/null) || canon=""
+  fi
+  for bindir in "$ASE_BIN_USER" "$ASE_SYSTEM_BIN" /usr/bin; do
+    link_path="$bindir/$name"
+    if ase_remove_bin_entry_if_matches "$link_path" "$canon" "$script_path"; then
+      echo "ase uninstallme: removed $link_path" >&2
+    fi
+  done
+  ase_forget_cmd_hash "$name"
+}
+
+ase_deferred_rm_paths() {
+  local -a paths=("$@")
+  local script
+  [[ ${#paths[@]} -gt 0 ]] || return 0
+  script=$(mktemp)
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'sleep 1'
+    for p in "${paths[@]}"; do
+      printf 'rm -rf %q\n' "$p"
+    done
+    printf 'rm -rf %q\n' "$script"
+  } >"$script"
+  chmod +x "$script"
+  nohup "$script" >/dev/null 2>&1 &
 }

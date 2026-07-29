@@ -54,7 +54,7 @@ _ase() {
   local cmd="${words[1]:-}"
 
   if (( cword == 1 )); then
-    COMPREPLY=($(compgen -W "list update search pull install remove installed run help" -- "$cur"))
+    COMPREPLY=($(compgen -W "list update search pull install remove installed run uninstallme help" -- "$cur"))
     return 0
   fi
 
@@ -70,7 +70,10 @@ _ase() {
       hub_names=$(_ase_hub_names) || return 0
       mapfile -t COMPREPLY < <(compgen -W "$hub_names" -- "$cur")
       ;;
-    update)
+    uninstallme)
+      if [[ $cur == -* ]]; then
+        COMPREPLY=($(compgen -W "-y --yes" -- "$cur"))
+      fi
       ;;
     install)
       local names

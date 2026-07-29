@@ -314,6 +314,93 @@ path_hint() {
   esac
 }
 
+install_completion_wrapper_content() {
+  local comp_file=$1
+  local q
+  q=$(printf '%q' "$comp_file")
+  cat <<EOF
+# ase completion (awsome-script-manager install.sh)
+case \$- in
+  *i*) ;;
+  *) return 0 ;;
+esac
+_comp=$q
+[[ -f \$_comp ]] && . "\$_comp"
+EOF
+}
+
+install_global_completion() {
+  local share_dir=$1
+  local comp_file="$share_dir/completions/ase.bash"
+  local profile_d="/etc/profile.d/ase-completion.sh"
+  local bash_comp_d="/etc/bash_completion.d/ase"
+  local content
+
+  content=$(install_completion_wrapper_content "$comp_file")
+  run_as_root mkdir -p /etc/profile.d /etc/bash_completion.d
+  printf '%s\n' "$content" | run_as_root tee "$profile_d" >/dev/null
+  run_as_root chmod 755 "$profile_d"
+  printf '%s\n' "$content" | run_as_root tee "$bash_comp_d" >/dev/null
+  echo "install: 已配置 Tab 补全（登录后自动生效）："
+  echo "  $profile_d"
+  echo "  $bash_comp_d"
+}
+
+install_bashrc_completion() {
+  local share_dir=$1
+  local comp_file="$share_dir/completions/ase.bash"
+  local bashrc="${HOME}/.bashrc"
+  local begin='# >>> ase completion >>>'
+  local end='# <<< ase completion <<<'
+  local tmp in_block=0
+
+  mkdir -p "$(dirname "$bashrc")"
+  touch "$bashrc"
+
+  if grep -qF "$begin" "$bashrc" 2>/dev/null; then
+    tmp=$(mktemp)
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line == "$begin" ]]; then
+        in_block=1
+        printf '%s\n' "$begin"
+        printf '[[ -f %q ]] && . %q\n' "$comp_file" "$comp_file"
+        printf '%s\n' "$end"
+        continue
+      fi
+      if (( in_block )); then
+        [[ $line == "$end" ]] && in_block=0
+        continue
+      fi
+      printf '%s\n' "$line"
+    done < "$bashrc" > "$tmp"
+    mv "$tmp" "$bashrc"
+  else
+    {
+      echo ""
+      echo "$begin"
+      printf '[[ -f %q ]] && . %q\n' "$comp_file" "$comp_file"
+      echo "$end"
+    } >> "$bashrc"
+  fi
+  echo "install: 已配置 Tab 补全（写入 $bashrc，新开 shell 生效）"
+}
+
+install_enable_completion() {
+  local share_dir=$1
+  local comp_file="$share_dir/completions/ase.bash"
+
+  [[ -f $comp_file ]] || {
+    echo "install: 跳过补全（未找到 $comp_file）"
+    return 0
+  }
+
+  if path_under_home "$share_dir"; then
+    install_bashrc_completion "$share_dir"
+  else
+    install_global_completion "$share_dir"
+  fi
+}
+
 main() {
   local src_root bin_dir share_dir custom scope
 
@@ -390,10 +477,19 @@ main() {
     install_write_ase_config "$share_dir"
   fi
   path_hint "$bin_dir"
+  if [[ ${ASE_INSTALL_COMPLETION:-1} != 0 ]]; then
+    install_enable_completion "$share_dir"
+  fi
 
   echo
-  echo "安装完成。可选：启用补全"
-  echo "  source \"$share_dir/completions/ase.bash\""
+  echo "安装完成。"
+  if [[ ${ASE_INSTALL_COMPLETION:-1} == 0 ]]; then
+    echo "补全未自动配置（ASE_INSTALL_COMPLETION=0）。可手动："
+    echo "  source \"$share_dir/completions/ase.bash\""
+  else
+    echo "若 Tab 补全无效，请确认是交互式 bash 且补全文件存在；当前 shell 可执行："
+    echo "  source \"$share_dir/completions/ase.bash\""
+  fi
   if [[ -n $src_root ]]; then
     echo "本地安装：脚本目录为 $(install_default_scripts_dir "$src_root")（ase update 同步 script-hub.list，ase pull 拉取脚本）。"
   else

@@ -25,6 +25,7 @@ Commands:
   remove <name>        Remove installed symlinks from ~/bin and /usr/local/bin
   installed            List scripts recorded in data/install.list
   run <name> [-- args] Run a script
+  uninstallme [-y]     Remove ase install (bin links, share, config, completion hooks)
 
 Environment / config:
   ASE_SCRIPTS_DIR      Local scripts directory (required)
@@ -320,6 +321,154 @@ cmd_remove() {
   ase_install_list_remove "$name"
 }
 
+cmd_uninstallme() {
+  local assume_yes=0
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -y | --yes)
+        assume_yes=1
+        shift
+        ;;
+      -h | --help)
+        echo "Usage: ase uninstallme [-y]" >&2
+        echo "  Removes packaged ase install: script symlinks in bin, ase in PATH," >&2
+        echo "  share tree, ~/.config/ase, and completion profile/bashrc hooks." >&2
+        echo "  Does not delete ASE_SCRIPTS_DIR (your pulled scripts)." >&2
+        return 0
+        ;;
+      *)
+        ase_die "uninstallme: unknown option: $1"
+        ;;
+    esac
+  done
+
+  local share_from_path share_from_cmd cfg_file cfg_dir
+  local -a share_dirs=() bin_dirs=() deferred_paths=()
+  local bindir link_path name s git_root found
+
+  share_from_path=$ASE_ROOT
+  share_from_cmd=$(ase_detect_share_from_command 2>/dev/null) || share_from_cmd=""
+
+  cfg_file="${ASE_CONFIG:-$HOME/.config/ase/config}"
+  if [[ $cfg_file == "~/"* ]]; then
+    cfg_file="$HOME/${cfg_file#~/}"
+  elif [[ $cfg_file == "~" ]]; then
+    cfg_file="$HOME"
+  fi
+  cfg_dir=$(dirname "$cfg_file")
+
+  if ase_try_source_config; then
+    :
+  else
+    ASE_BIN_USER="${ASE_BIN_USER:-$HOME/bin}"
+  fi
+
+  if ase_share_looks_installed "$share_from_path" && ase_should_remove_share_dir "$share_from_path" "$share_from_cmd"; then
+    share_dirs+=("$share_from_path")
+  fi
+  if [[ -n $share_from_cmd ]]; then
+    found=0
+    for s in "${share_dirs[@]}"; do
+      [[ $s == "$share_from_cmd" ]] && found=1
+    done
+    (( found )) || share_dirs+=("$share_from_cmd")
+  fi
+  if [[ -n ${ASE_GIT_ROOT:-} ]]; then
+    git_root=$(ase_canonical_path "$ASE_GIT_ROOT" 2>/dev/null) || git_root=$ASE_GIT_ROOT
+    if ase_share_looks_installed "$git_root" && ase_should_remove_share_dir "$git_root" "$share_from_cmd"; then
+      found=0
+      for s in "${share_dirs[@]}"; do
+        [[ $s == "$git_root" ]] && found=1
+      done
+      (( found )) || share_dirs+=("$git_root")
+    fi
+  fi
+
+  if [[ ${#share_dirs[@]} -eq 0 ]]; then
+    ase_die "uninstallme: cannot detect an installed ase share directory"
+  fi
+
+  if [[ -z ${ASE_SCRIPTS_DIR:-} ]]; then
+    for s in "${share_dirs[@]}"; do
+      if [[ -d "$s/scripts" ]]; then
+        ASE_SCRIPTS_DIR="$s/scripts"
+        break
+      fi
+    done
+  fi
+
+  bin_dirs=("$ASE_SYSTEM_BIN" /usr/bin "$HOME/bin")
+  [[ -n ${ASE_BIN_USER:-} ]] && bin_dirs+=("$ASE_BIN_USER")
+
+  echo "ase uninstallme: will remove:" >&2
+  for s in "${share_dirs[@]}"; do
+    echo "  share: $s" >&2
+  done
+  echo "  config: $cfg_dir" >&2
+  echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc block" >&2
+  echo "  ase symlinks under: ${bin_dirs[*]}" >&2
+  for s in "${share_dirs[@]}"; do
+    while IFS= read -r name; do
+      [[ -n $name ]] || continue
+      echo "    $name (from $s/data/install.list)" >&2
+    done < <(ase_read_install_names_from_file "$s/data/install.list")
+  done
+  if [[ -n ${ASE_SCRIPTS_DIR:-} ]]; then
+    echo "  (keeping scripts dir: $ASE_SCRIPTS_DIR)" >&2
+  fi
+
+  if (( ! assume_yes )); then
+    ase_can_prompt || ase_die "uninstallme: not a TTY; use -y to confirm"
+    ase_prompt_yn "Proceed with uninstall?" n || ase_die "uninstallme: cancelled"
+  fi
+
+  for s in "${share_dirs[@]}"; do
+    while IFS= read -r name; do
+      [[ -n $name ]] || continue
+      script_path=""
+      if [[ -n ${ASE_SCRIPTS_DIR:-} ]]; then
+        script_path="$ASE_SCRIPTS_DIR/$name"
+      elif [[ -f "$s/scripts/$name" ]]; then
+        script_path="$s/scripts/$name"
+      fi
+      ase_remove_script_bin_links "$name" "$script_path"
+    done < <(ase_read_install_names_from_file "$s/data/install.list")
+  done
+
+  for s in "${share_dirs[@]}"; do
+    for bindir in "${bin_dirs[@]}"; do
+      [[ -n $bindir ]] || continue
+      link_path="$bindir/ase"
+      if ase_remove_ase_bin_symlink "$link_path" "$s"; then
+        echo "ase uninstallme: removed $link_path" >&2
+      fi
+    done
+  done
+
+  ase_remove_bashrc_completion_block
+  ase_remove_system_completion_hooks
+
+  if [[ -d $cfg_dir ]]; then
+    rm -rf "$cfg_dir"
+    echo "ase uninstallme: removed $cfg_dir" >&2
+  fi
+
+  ase_forget_cmd_hash ase
+
+  for s in "${share_dirs[@]}"; do
+    found=0
+    for x in "${deferred_paths[@]}"; do
+      [[ $x == "$s" ]] && found=1
+    done
+    (( found )) || deferred_paths+=("$s")
+  done
+  ase_deferred_rm_paths "${deferred_paths[@]}"
+  for s in "${deferred_paths[@]}"; do
+    echo "ase uninstallme: scheduled removal of $s" >&2
+  done
+  echo "ase uninstallme: done (share removal runs in background after exit)" >&2
+}
+
 main() {
   case "${1:-}" in
     list) cmd_list ;;
@@ -329,6 +478,7 @@ main() {
     install) cmd_install "${@:2}" ;;
     remove) cmd_remove "${@:2}" ;;
     installed) cmd_installed "${@:2}" ;;
+    uninstallme) cmd_uninstallme "${@:2}" ;;
     run) cmd_run "${@:2}" ;;
     __complete_names) cmd_complete_names ;;
     __complete_hub_names) cmd_complete_hub_names ;;

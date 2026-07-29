@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/li1125435097/awsome-script-manager/
 
 脚本会询问是否指定 bin 目录；不指定则选择「当前用户（`~/bin`）」或「全局（`/usr/local/bin`）」。程序文件默认放在 `~/.local/share/ase` 或 `/usr/local/share/ase`。
 
-非交互环境变量：`ASE_INSTALL_SCOPE=user|global`、`ASE_INSTALL_BIN=/path/to/bin`、`ASE_INSTALL_SHARE=/path/to/share`。
+非交互环境变量：`ASE_INSTALL_SCOPE=user|global`、`ASE_INSTALL_BIN=/path/to/bin`、`ASE_INSTALL_SHARE=/path/to/share`、`ASE_INSTALL_COMPLETION=0`（跳过自动 Tab 补全配置）。
 
 克隆仓库后也可本地安装：
 
@@ -30,7 +30,20 @@ cd awsome-script-manager
 ln -sf /path/to/awsome-script-manager/ase ~/bin/ase
 ```
 
-Enable tab completion (Git Bash / Linux):
+`install.sh` 默认会配置 Bash Tab 补全：全局安装写入 `/etc/profile.d/ase-completion.sh` 与 `/etc/bash_completion.d/ase`；用户安装写入 `~/.bashrc`。重新 SSH 登录或新开 shell 后，`ase install <Tab>` 等即可补全。
+
+若从旧版本升级且未重装，可再运行一次 `install.sh`，或全局安装时手动：
+
+```bash
+sudo tee /etc/profile.d/ase-completion.sh <<'EOF'
+# ase completion
+case $- in *i*) ;; *) return 0 ;; esac
+[[ -f /usr/local/share/ase/completions/ase.bash ]] && . /usr/local/share/ase/completions/ase.bash
+EOF
+sudo chmod 755 /etc/profile.d/ase-completion.sh
+```
+
+克隆仓库本地开发时仍可手动加载：
 
 ```bash
 source /path/to/awsome-script-manager/completions/ase.bash
@@ -90,6 +103,23 @@ ase run mytool -- --verbose
 - `install` creates a symlink to the script file.
 - `remove` removes symlinks in `~/bin` and `/usr/local/bin` only when they point at that script (the file in `ASE_SCRIPTS_DIR` is kept).
 
+### `uninstallme`
+
+Removes the packaged **ase** install (not your script files in `ASE_SCRIPTS_DIR`):
+
+- Symlinks for scripts listed in `data/install.list` under `~/bin` and `/usr/local/bin`
+- `ase` in `/usr/local/bin`, `/usr/bin`, and `~/bin` (when pointing at the share tree)
+- Share tree (`/usr/local/share/ase` or `~/.local/share/ase`, plus paths from config / `which ase`)
+- `~/.config/ase`
+- Tab completion hooks: `/etc/profile.d/ase-completion.sh`, `/etc/bash_completion.d/ase`, and the `~/.bashrc` block from `install.sh`
+
+```bash
+ase uninstallme      # interactive confirm
+ase uninstallme -y   # non-interactive
+```
+
+Global paths under `/etc` require `sudo` when not root. Share removal is deferred until after the command exits (the running `ase` binary lives in that tree).
+
 ## Tab completion
 
-After sourcing `completions/ase.bash`, `ase run <Tab>` completes script names from `ASE_SCRIPTS_DIR`. `install`, `remove`, and subcommands are completed similarly.
+After install (or after sourcing `completions/ase.bash` in a dev checkout), `ase run <Tab>` completes script names from `ASE_SCRIPTS_DIR`. `install`, `remove`, `pull`, and subcommands are completed similarly. Set `ASE_INSTALL_COMPLETION=0` when running `install.sh` to skip writing profile/bashrc hooks.
