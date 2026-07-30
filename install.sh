@@ -10,7 +10,7 @@ REPO_BRANCH="${ASE_INSTALL_BRANCH:-main}"
 GLOBAL_BIN="/usr/local/bin"
 GLOBAL_SHARE="/usr/local/share/ase"
 USER_BIN="${HOME}/bin"
-USER_SHARE="${HOME}/.local/share/ase"
+USER_SHARE="${XDG_DATA_HOME:-${HOME}/.local/share}/ase"
 SHARE_SCRIPTS_REL="scripts"
 # script-hub 为远程脚本树，体积可能很大；安装时不复制/检出，用 ase pull 按需拉取 (remote script tree; not copied at install — use ase pull)
 INSTALL_SHARE_COPY_ITEMS=(ase lib completions data algorithm LICENSE README.md)
@@ -142,16 +142,57 @@ copy_tree() {
   chmod +x "$dest/ase" 2>/dev/null || true
 }
 
-# True if the current user can create/write under share (parent may not exist yet).
+# True if the current user can create/write under share (parent or target may already exist).
 install_share_writable() {
   local share=$1
-  local parent
+  local parent probe
+
   if [[ $(id -u) -eq 0 ]]; then
     return 0
   fi
+
   parent=$(dirname "$share")
-  mkdir -p "$parent" 2>/dev/null || return 1
-  [[ -w "$parent" ]]
+  if ! mkdir -p "$parent" 2>/dev/null; then
+    return 1
+  fi
+
+  if [[ -e "$share" ]]; then
+    [[ -w "$share" ]] || return 1
+  elif ! [[ -w "$parent" ]]; then
+    return 1
+  fi
+
+  if ! mkdir -p "$share" 2>/dev/null; then
+    return 1
+  fi
+  probe="$share/.ase-install-probe.$$"
+  if : >"$probe" 2>/dev/null; then
+    rm -f "$probe"
+    return 0
+  fi
+  return 1
+}
+
+install_share_write_die() {
+  local share=$1
+  local parent owner msg
+  parent=$(dirname "$share")
+  msg="无法写入 $share（请检查磁盘空间与目录权限）(Cannot write to $share; check disk space and permissions)"
+  if [[ -d $parent ]]; then
+    msg=$msg$'\n'"install: 父目录权限 (parent): $(ls -ld "$parent" 2>/dev/null || echo '?')"
+  fi
+  if [[ -e $share ]]; then
+    msg=$msg$'\n'"install: 目标路径 (target): $(ls -ld "$share" 2>/dev/null || echo '?')"
+  fi
+  if [[ -e $parent || -e $share ]]; then
+    owner=$(stat -c '%U' "$share" 2>/dev/null || stat -c '%U' "$parent" 2>/dev/null || true)
+    if [[ -n $owner && $owner != "$(id -un)" ]]; then
+      msg=$msg$'\n'"install: 目录属主为 $owner，当前用户为 $(id -un)。可尝试：(Owner is $owner; current user is $(id -un). Try:)"
+      msg=$msg$'\n'"install:   sudo chown -R $(id -un):$(id -gn) $(printf '%q' "$parent")"
+      msg=$msg$'\n'"install: 或删除后重装 (or remove and reinstall): sudo rm -rf $(printf '%q' "$share")"
+    fi
+  fi
+  die "$msg"
 }
 
 clone_repo() {
@@ -229,7 +270,7 @@ install_to_share() {
     if install_share_writable "$share"; then
       copy_tree "$src" "$share"
     elif path_under_home "$share"; then
-      die "无法写入 $share（请检查磁盘空间与目录权限）(Cannot write to $share; check disk space and permissions)"
+      install_share_write_die "$share"
     else
       copy_tree_as_root "$src" "$share"
     fi
@@ -238,7 +279,7 @@ install_to_share() {
     if install_share_writable "$share"; then
       clone_repo "$share"
     elif path_under_home "$share"; then
-      die "无法写入 $share（请检查磁盘空间与目录权限）(Cannot write to $share; check disk space and permissions)"
+      install_share_write_die "$share"
     else
       clone_repo_as_root "$share"
     fi
