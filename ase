@@ -404,7 +404,7 @@ cmd_uninstallme() {
     echo "  share: $s" >&2
   done
   echo "  config: $cfg_dir" >&2
-  echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc block" >&2
+  echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc completion/path blocks" >&2
   echo "  ase/asm/sm symlinks under: ${bin_dirs[*]}" >&2
   for s in "${share_dirs[@]}"; do
     while IFS= read -r name; do
@@ -447,6 +447,7 @@ cmd_uninstallme() {
   done
 
   ase_remove_bashrc_completion_block
+  ase_remove_bashrc_path_block
   ase_remove_system_completion_hooks
 
   if [[ -d $cfg_dir ]]; then

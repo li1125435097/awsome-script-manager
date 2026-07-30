@@ -144,23 +144,27 @@ _ase_cli_binary() {
   return 1
 }
 
+_ase_cli_dispatch() {
+  local _ase_sub
+  _ase_sub=$(_ase_canonical_cmd "${1:-}")
+  if [[ $_ase_sub == remove && $# -ge 2 ]]; then
+    local _ase_remove_name=$2
+    "$_ASE_CLI_BIN" "$@"
+    local _ase_remove_status=$?
+    hash -d "$_ase_remove_name" 2>/dev/null || true
+    return "$_ase_remove_status"
+  fi
+  "$_ASE_CLI_BIN" "$@"
+}
+
 _ase_install_cli_wrapper() {
-  [[ $(type -t ase 2>/dev/null) == function ]] && return 0
-  local bin
+  local bin name
   bin=$(_ase_cli_binary) || return 0
   _ASE_CLI_BIN=$bin
-  ase() {
-    local _ase_sub
-    _ase_sub=$(_ase_canonical_cmd "${1:-}")
-    if [[ $_ase_sub == remove && $# -ge 2 ]]; then
-      local _ase_remove_name=$2
-      "$_ASE_CLI_BIN" "$@"
-      local _ase_remove_status=$?
-      hash -d "$_ase_remove_name" 2>/dev/null || true
-      return "$_ase_remove_status"
-    fi
-    "$_ASE_CLI_BIN" "$@"
-  }
+  for name in "${_ASE_CLI_NAMES[@]}"; do
+    [[ $(type -t "$name" 2>/dev/null) == function ]] && continue
+    eval "$name() { _ase_cli_dispatch \"\$@\"; }"
+  done
 }
 
 _ase_install_cli_wrapper

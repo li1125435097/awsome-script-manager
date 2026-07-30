@@ -339,15 +339,66 @@ link_ase() {
   done
 }
 
-path_hint() {
+path_in_path() {
   local bin_dir=$1
   case ":${PATH}:" in
-    *":$bin_dir:"*) ;;
-    *)
-      echo "install: 请将 $bin_dir 加入 PATH，例如在 ~/.bashrc 中加入：(Add $bin_dir to PATH, e.g. in ~/.bashrc:)"
-      echo "  export PATH=\"$bin_dir:\$PATH\""
-      ;;
+    *":$bin_dir:"*) return 0 ;;
+    *) return 1 ;;
   esac
+}
+
+install_bashrc_path() {
+  local bin_dir=$1
+  local bashrc="${HOME}/.bashrc"
+  local begin='# >>> ase path >>>'
+  local end='# <<< ase path <<<'
+  local export_line tmp in_block=0
+
+  path_in_path "$bin_dir" && return 0
+  is_system_bin_dir "$bin_dir" && return 0
+
+  export_line="export PATH=\"$bin_dir:\$PATH\""
+  mkdir -p "$(dirname "$bashrc")"
+  touch "$bashrc"
+
+  if grep -qF "$begin" "$bashrc" 2>/dev/null; then
+    tmp=$(mktemp)
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line == "$begin" ]]; then
+        in_block=1
+        printf '%s\n' "$begin"
+        printf '%s\n' "$export_line"
+        printf '%s\n' "$end"
+        continue
+      fi
+      if (( in_block )); then
+        [[ $line == "$end" ]] && in_block=0
+        continue
+      fi
+      printf '%s\n' "$line"
+    done < "$bashrc" > "$tmp"
+    mv "$tmp" "$bashrc"
+  else
+    {
+      echo ""
+      echo "$begin"
+      printf '%s\n' "$export_line"
+      echo "$end"
+    } >> "$bashrc"
+  fi
+  echo "install: 已将 $bin_dir 加入 PATH（写入 $bashrc，新开 shell 生效；当前 shell 请 source ~/.bashrc）(Added $bin_dir to PATH in $bashrc; source ~/.bashrc for this shell)"
+}
+
+path_hint() {
+  local bin_dir=$1
+  if path_in_path "$bin_dir"; then
+    return 0
+  fi
+  if is_system_bin_dir "$bin_dir"; then
+    echo "install: 请将 $bin_dir 加入 PATH。(Add $bin_dir to PATH.)"
+    return 0
+  fi
+  install_bashrc_path "$bin_dir"
 }
 
 install_completion_wrapper_content() {

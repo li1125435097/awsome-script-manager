@@ -470,11 +470,14 @@ ase_detect_share_from_command() {
 
 ase_bashrc_completion_begin='# >>> ase completion >>>'
 ase_bashrc_completion_end='# <<< ase completion <<<'
+ase_bashrc_path_begin='# >>> ase path >>>'
+ase_bashrc_path_end='# <<< ase path <<<'
 
-ase_remove_bashrc_completion_block() {
+ase_remove_bashrc_block() {
+  local begin=$1
+  local end=$2
+  local label=$3
   local bashrc="${HOME}/.bashrc"
-  local begin=$ase_bashrc_completion_begin
-  local end=$ase_bashrc_completion_end
   local tmp in_block=0 changed=0
 
   [[ -f $bashrc ]] || return 0
@@ -495,10 +498,18 @@ ase_remove_bashrc_completion_block() {
   done < "$bashrc" > "$tmp"
   if (( changed )); then
     mv "$tmp" "$bashrc"
-    echo "ase uninstallme: removed completion block from $bashrc" >&2
+    echo "ase uninstallme: removed $label block from $bashrc" >&2
   else
     rm -f "$tmp"
   fi
+}
+
+ase_remove_bashrc_completion_block() {
+  ase_remove_bashrc_block "$ase_bashrc_completion_begin" "$ase_bashrc_completion_end" "completion"
+}
+
+ase_remove_bashrc_path_block() {
+  ase_remove_bashrc_block "$ase_bashrc_path_begin" "$ase_bashrc_path_end" "path"
 }
 
 ase_remove_system_completion_hooks() {
