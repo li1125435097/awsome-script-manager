@@ -1,0 +1,138 @@
+#!/bin/bash
+# mysql database manager for docker，dbexport and dbimport
+
+# ================= 1. 默认配置区 =================
+# 在这里设置默认的数据库账号和密码
+DEFAULT_DB_USER="root"
+DEFAULT_DB_PASS="123456"
+DOCKER_CONTAINER="mysql-container"
+
+# 使用默认值初始化变量
+DB_USER="$DEFAULT_DB_USER"
+DB_PASS="$DEFAULT_DB_PASS"
+
+# ================= 2. 交互式菜单 =================
+
+# 2.1 询问是否重新输入账号密码
+echo "========================================="
+read -p "是否重新输入数据库账号密码？(默认: n) [y/N]: " change_cred
+if [[ "$change_cred" =~ ^[Yy]$ ]]; then
+    read -p "请输入数据库账号: " DB_USER
+    read -sp "请输入数据库密码: " DB_PASS
+    echo "" # 换行
+fi
+
+# 2.2 询问是导出还是导入
+read -p "请选择操作：导出数据库还是导入数据库？(默认: Y导出) [Y/n]: " action_choice
+if [[ "$action_choice" =~ ^[Nn]$ ]]; then
+    ACTION="import"
+else
+    ACTION="export"
+fi
+
+# 2.3 询问数据库名称
+echo "请选择目标数据库："
+echo "  1) followup-test"
+echo "  2) followup-dev"
+echo "  3) 其他 (手动输入)"
+read -p "请输入选项 [1/2/3] (默认: 1): " db_choice
+
+case "$db_choice" in
+    2) DB_NAME="followup-dev" ;;
+    3) 
+        read -p "请输入自定义数据库名称: " DB_NAME
+        if [ -z "$DB_NAME" ]; then
+            echo "错误：数据库名称不能为空！"
+            exit 1
+        fi
+        ;;
+    *) DB_NAME="followup-test" ;; # 默认选择 1
+esac
+
+# 2.4 如果是导入，询问使用哪个 SQL 文件
+if [ "$ACTION" == "import" ]; then
+    echo "-----------------------------------------"
+    echo "当前目录下的 .sql 文件："
+    
+    # 将当前目录下的 .sql 文件放入数组
+    mapfile -t sql_files < <(find . -maxdepth 1 -name "*.sql" -printf "%f\n" | sort)
+    
+    if [ ${#sql_files[@]} -eq 0 ]; then
+        echo "错误：当前目录下没有找到任何 .sql 文件！"
+        exit 1
+    fi
+    
+    for i in "${!sql_files[@]}"; do
+        echo "  $((i+1))) ${sql_files[$i]}"
+    done
+    
+    read -p "请选择要导入的 SQL 文件编号: " file_choice
+    
+    # 校验输入是否为有效数字
+    if ! [[ "$file_choice" =~ ^[0-9]+$ ]] || [ "$file_choice" -lt 1 ] || [ "$file_choice" -gt ${#sql_files[@]} ]; then
+        echo "错误：无效的选择！"
+        exit 1
+    fi
+    
+    SQL_FILE="./${sql_files[$((file_choice-1))]}"
+fi
+
+# ================= 3. 执行脚本逻辑 =================
+
+echo "========================================="
+echo "准备执行操作..."
+echo "操作类型: $([ "$ACTION" == "export" ] && echo '导出' || echo '导入')"
+echo "目标数据库: $DB_NAME"
+[ "$ACTION" == "import" ] && echo "SQL 文件: $SQL_FILE"
+echo "========================================="
+
+if [ "$ACTION" == "export" ]; then
+    # --- 导出逻辑 ---
+    TIME=$(date +%Y%m%d_%H%M%S)
+    EXPORT_FILE="./${DB_NAME}_backup_${TIME}.sql"
+    
+    echo "正在导出数据库 $DB_NAME ..."
+    docker exec -i "$DOCKER_CONTAINER" mysqldump \
+        -u"$DB_USER" -p"$DB_PASS" \
+        --single-transaction \
+        --routines \
+        --skip-add-drop-table \
+        "$DB_NAME" > "$EXPORT_FILE"
+        
+    if [ $? -eq 0 ]; then
+        echo "✅ 数据库导出成功！"
+        echo "备份文件保存在: $EXPORT_FILE"
+    else
+        echo "❌ 数据库导出失败，请检查账号密码或容器状态！"
+        exit 1
+    fi
+
+else
+    # --- 导入逻辑 ---
+    if [ ! -f "$SQL_FILE" ]; then
+        echo "❌ 错误：找不到备份文件 $SQL_FILE，请检查文件路径！"
+        exit 1
+    fi
+    
+    echo "正在删除旧数据库（如果存在）: $DB_NAME"
+    docker exec -i "$DOCKER_CONTAINER" mysql \
+        -u"$DB_USER" -p"$DB_PASS" \
+        -e "DROP DATABASE IF EXISTS \`$DB_NAME\`;"
+        
+    echo "正在创建新数据库: $DB_NAME"
+    docker exec -i "$DOCKER_CONTAINER" mysql \
+        -u"$DB_USER" -p"$DB_PASS" \
+        -e "CREATE DATABASE \`$DB_NAME\` DEFAULT CHARACTER SET utf8mb4;"
+        
+    echo "正在导入数据文件: $SQL_FILE"
+    cat "$SQL_FILE" | docker exec -i "$DOCKER_CONTAINER" mysql \
+        -u"$DB_USER" -p"$DB_PASS" \
+        "$DB_NAME"
+        
+    if [ $? -eq 0 ]; then
+        echo "✅ 数据库导入成功！"
+    else
+        echo "❌ 数据库导入失败，请检查错误日志！"
+        exit 1
+    fi
+fi
