@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Summarize disk usage of files in the current directory (human-readable)
+# --- ase-meta ---
+# author: li1125435097
+# desc: Summarize disk usage of files in the current directory (human-readable)
+# constant: depth=1 (max-depth for du)
+# constant: limit=20 (lines shown via head)
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/du-here
+# --- end ---
 set -euo pipefail
 
 depth="${1:-1}"

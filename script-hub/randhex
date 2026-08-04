@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Print random hex bytes (default 16 bytes)
+# --- ase-meta ---
+# author: li1125435097
+# desc: Print random hex bytes (default 16 bytes)
+# constant: bytes=16 (number of random bytes)
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/randhex
+# --- end ---
 set -euo pipefail
 
 bytes="${1:-16}"

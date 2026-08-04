@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Check whether a TCP port is listening on localhost
+# --- ase-meta ---
+# author: li1125435097
+# desc: Check whether a TCP port is listening on localhost
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/port-open
+# --- end ---
 set -euo pipefail
 
 port="${1:-}"

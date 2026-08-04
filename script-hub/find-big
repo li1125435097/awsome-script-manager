@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Find largest regular files under a path (default .)
+# --- ase-meta ---
+# author: li1125435097
+# desc: Find largest regular files under a path (default .)
+# constant: root=. (search root directory)
+# constant: limit=15 (number of files to list)
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/find-big
+# --- end ---
 set -euo pipefail
 
 root="${1:-.}"

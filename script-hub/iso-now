@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Print current local time as ISO-8601
+# --- ase-meta ---
+# author: li1125435097
+# desc: Print current local time as ISO-8601
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/iso-now
+# --- end ---
 set -euo pipefail
 
 if date --version >/dev/null 2>&1; then

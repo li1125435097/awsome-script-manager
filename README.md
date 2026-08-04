@@ -107,6 +107,7 @@ ASE_BIN_USER="$HOME/bin"
 
 ```text
 ase list (ls, l)              列出 ASE_SCRIPTS_DIR 中的脚本及简介
+ase info <name>               查看脚本元数据（author、desc、constants、source）
 ase update (ud, u)            从远程同步 data/script-hub.list
 ase search (se, s) <query>    在 script-hub 索引中模糊搜索名称
 ase pull (p) <name> [...]     从远程 script-hub 拉取脚本到本地目录
@@ -139,10 +140,74 @@ ase uninstallme [-y]          卸载 ase 程序本身
 ase run mytool -- --verbose
 ```
 
-## 脚本约定
+## 脚本编写规范
 
-- 第一行可为 shebang（如 `#!/usr/bin/env bash`），便于 `install` 后直接执行。
-- **简介行**：有 shebang 时取第二行，否则取第一行，供 `ase list` 展示（勿与 shebang 混用）。
+script-hub 中的脚本使用 **ase-meta** 头声明元数据。所有元数据行均为 Bash 注释，不影响脚本执行；`ase list`、`ase installed` 读取 `desc`，`ase info` 展示完整元数据。
+
+### 基本结构
+
+```bash
+#!/usr/bin/env bash
+# --- ase-meta ---
+# author: li1125435097
+# desc: Summarize disk usage of files in the current directory (human-readable)
+# constant: depth=1 (max-depth for du)
+# constant: limit=20 (lines shown via head)
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/du-here
+# --- end ---
+set -euo pipefail
+
+# 脚本逻辑...
+```
+
+顺序建议：**shebang → ase-meta 块 → `set -euo pipefail`（可选）→ 脚本主体**。
+
+### 字段说明
+
+| Key | 必填 | 格式 | 说明 |
+|-----|------|------|------|
+| `author` | 推荐 | 单行文本 | 作者标识 |
+| `desc` | 推荐 | 单行文本 | 人类可读描述，供 `ase list` 展示 |
+| `constant` | 可选，可重复 | `name=default (说明)` | 文档化脚本内默认值，**不注入运行时** |
+| `source` | 推荐 | URL | 指向 GitHub script-hub 中该脚本的 blob 地址 |
+| *(扩展)* | — | 任意新 key | 解析器可读，旧版 ase 忽略未知字段 |
+
+约定：
+
+- 块以 `# --- ase-meta ---` 开始、`# --- end ---` 结束（`---` 前后可有空格）。
+- 块内每行：`# <key>: <value>`；`key` 不区分大小写。
+- `constant` 行：`name=default` 为必选，`(...)` 内为可选说明。
+- `source` 统一为  
+  `https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/<脚本名>`。
+
+### 向后兼容
+
+无 ase-meta 块时，`desc` 仍从 shebang 后第一行 `# ...` 注释推断（旧版行为）。新脚本请使用 ase-meta 块。
+
+### 查看元数据
+
+```bash
+ase info du-here
+```
+
+示例输出：
+
+```text
+name:     du-here
+path:     ~/.local/share/ase/scripts/du-here
+author:   li1125435097
+desc:     Summarize disk usage of files in the current directory (human-readable)
+source:   https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/du-here
+constants:
+  depth=1              max-depth for du
+  limit=20             lines shown via head
+```
+
+### 贡献新脚本
+
+1. 在 `script-hub/` 添加脚本，按上述格式填写 ase-meta 头。
+2. 在 `data/script-hub.list` 追加脚本名（一行一个，或 `序号<TAB>名称`）。
+3. 第一行使用 shebang（如 `#!/usr/bin/env bash`），便于 `install` 后直接执行。
 
 ## Tab 补全
 

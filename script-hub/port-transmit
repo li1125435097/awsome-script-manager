@@ -1,5 +1,11 @@
 #!/bin/bash
-# port-transmit, a script to manage SSH tunnels
+# --- ase-meta ---
+# author: li1125435097
+# desc: port-transmit, a script to manage SSH tunnels
+# constant: WATCH_INTERVAL=30 (seconds between tunnel health checks)
+# constant: TUNNEL_FILE=~/.ssh_tunnels (file tracking active tunnels)
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/port-transmit
+# --- end ---
 
 TUNNEL_FILE="$HOME/.ssh_tunnels"
 touch "$TUNNEL_FILE"

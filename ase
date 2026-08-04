@@ -17,7 +17,8 @@ usage() {
 Usage: ase <command> [options] [args]
 
 Commands (aliases in parentheses):
-  list (ls, l)                 List scripts (name and first-line description)
+  list (ls, l)                 List scripts (name and description from script header)
+  info <name>                  Show script metadata (author, desc, constants, source)
   update (ud, u)               Sync data/script-hub.list from git remote
   search (se, s) <query>       Fuzzy-search script names in script-hub.list
   pull (p) <name> [...]        Pull script(s) from remote script-hub into ASE_SCRIPTS_DIR
@@ -65,13 +66,54 @@ cmd_list() {
   fi
 
   for name in "${names[@]}"; do
-    intro=$(ase_script_description_line "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
+    intro=$(ase_script_desc "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
     if [[ -z $intro ]]; then
       intro="(empty)"
     fi
     # shellcheck disable=SC2059
     printf "${green}%-${max}s${reset}  %s\n" "$name" "$intro"
   done
+}
+
+cmd_info() {
+  [[ $# -ge 1 ]] || ase_die "info: missing script name"
+  local name=$1 script author desc source constant
+  local has_constants=0
+
+  ase_require_scripts_dir
+  script=$(ase_resolve_script_path "$name") || exit $?
+
+  printf 'name:     %s\n' "$name"
+  printf 'path:     %s\n' "$script"
+
+  if ase_script_has_meta_block "$script"; then
+    author=$(ase_script_meta_get "$script" author)
+    [[ -n $author ]] && printf 'author:   %s\n' "$author"
+
+    desc=$(ase_script_meta_get "$script" desc)
+    [[ -n $desc ]] && printf 'desc:     %s\n' "$desc"
+
+    source=$(ase_script_meta_get "$script" source)
+    [[ -n $source ]] && printf 'source:   %s\n' "$source"
+
+    while IFS= read -r constant; do
+      [[ -n $constant ]] || continue
+      if (( ! has_constants )); then
+        echo "constants:"
+        has_constants=1
+      fi
+      local re='^([^=[:space:]]+)=(.+)[[:space:]]+\(([^)]*)\)[[:space:]]*$'
+      if [[ $constant =~ $re ]]; then
+        # shellcheck disable=SC2059
+        printf '  %-20s %s\n' "${BASH_REMATCH[1]}=${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+      else
+        printf '  %s\n' "$constant"
+      fi
+    done < <(ase_script_meta_constants "$script")
+  else
+    desc=$(ase_script_desc "$script" 2>/dev/null || true)
+    [[ -n $desc ]] && printf 'desc:     %s\n' "$desc"
+  fi
 }
 
 cmd_complete_names() {
@@ -230,7 +272,7 @@ cmd_installed() {
   for name in "${names[@]}"; do
     intro=""
     if [[ -d ${ASE_SCRIPTS_DIR:-} && -f $ASE_SCRIPTS_DIR/$name ]]; then
-      intro=$(ase_script_description_line "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
+      intro=$(ase_script_desc "$ASE_SCRIPTS_DIR/$name" 2>/dev/null || true)
     fi
     if [[ -z $intro ]]; then
       intro="(not in ASE_SCRIPTS_DIR)"
@@ -493,6 +535,7 @@ main() {
 
   case "$cmd" in
     list) cmd_list ;;
+    info) cmd_info "${@:2}" ;;
     update) cmd_update "${@:2}" ;;
     search) cmd_search "${@:2}" ;;
     pull) cmd_pull "${@:2}" ;;

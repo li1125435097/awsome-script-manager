@@ -188,15 +188,84 @@ ase_maybe_chmod_executable() {
   fi
 }
 
-ase_script_description_line() {
+ase_script_has_meta_block() {
+  [[ -f $1 ]] || return 1
+  grep -qE '^#[[:space:]]*---[[:space:]]*ase-meta[[:space:]]*---[[:space:]]*$' "$1" 2>/dev/null
+}
+
+ase_script_meta_lines() {
   local file=$1
-  local first
+  [[ -f $file ]] || return 1
+  awk '
+    BEGIN { in_block = 0 }
+    /^#[[:space:]]*---[[:space:]]*ase-meta[[:space:]]*---[[:space:]]*$/ {
+      in_block = 1
+      next
+    }
+    in_block && /^#[[:space:]]*---[[:space:]]*end[[:space:]]*---[[:space:]]*$/ {
+      exit
+    }
+    in_block && /^#[[:space:]]/ {
+      line = $0
+      sub(/^#[[:space:]]*/, "", line)
+      print line
+    }
+  ' "$file"
+}
+
+ase_script_meta_get() {
+  local file=$1 key=$2
+  key=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
+  ase_script_meta_lines "$file" 2>/dev/null | awk -F': ' -v k="$key" '
+    {
+      field = tolower($1)
+      if (field == k) {
+        sub(/^[^:]+:[[:space:]]*/, "")
+        print
+        exit
+      }
+    }
+  '
+}
+
+ase_script_meta_constants() {
+  local file=$1
+  ase_script_meta_lines "$file" 2>/dev/null | awk -F': ' '
+    tolower($1) == "constant" {
+      sub(/^[^:]+:[[:space:]]*/, "")
+      print
+    }
+  '
+}
+
+ase_script_desc_legacy() {
+  local file=$1 first line
   first=$(head -n1 "$file" 2>/dev/null || true)
   if [[ $first == '#!'* ]]; then
-    head -n2 "$file" | tail -n1
+    line=$(head -n2 "$file" | tail -n1)
   else
-    printf '%s\n' "$first"
+    line=$first
   fi
+  line=${line#\# }
+  line=${line#\#}
+  printf '%s\n' "$line"
+}
+
+ase_script_desc() {
+  local file=$1 desc
+  [[ -f $file ]] || return 1
+  if ase_script_has_meta_block "$file"; then
+    desc=$(ase_script_meta_get "$file" desc)
+    if [[ -n $desc ]]; then
+      printf '%s\n' "$desc"
+      return 0
+    fi
+  fi
+  ase_script_desc_legacy "$file"
+}
+
+ase_script_description_line() {
+  ase_script_desc "$1"
 }
 
 ase_script_first_line_is_shebang() {

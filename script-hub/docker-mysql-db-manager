@@ -1,5 +1,12 @@
 #!/bin/bash
-# mysql database manager for docker，dbexport and dbimport
+# --- ase-meta ---
+# author: li1125435097
+# desc: mysql database manager for docker，dbexport and dbimport
+# constant: DEFAULT_DB_USER=root (default database user)
+# constant: DEFAULT_DB_PASS=123456 (default database password)
+# constant: DOCKER_CONTAINER=mysql-container (docker container name)
+# source: https://github.com/li1125435097/awsome-script-manager/blob/main/script-hub/docker-mysql-db-manager
+# --- end ---
 
 # ================= 1. 默认配置区 =================
 # 在这里设置默认的数据库账号和密码
