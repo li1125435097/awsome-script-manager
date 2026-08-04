@@ -13,21 +13,26 @@ export ASE_DEFAULT_GIT_ROOT="$ASE_ROOT"
 source "$ASE_ROOT/lib/ase-common.sh"
 
 usage() {
-  cat <<'EOF'
+  local green="" reset=""
+  if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
+  cat <<EOF
 Usage: ase <command> [options] [args]
 
 Commands (aliases in parentheses):
-  list (ls, l)                 List scripts (name and description from script header)
-  info <name>                  Show script metadata (author, desc, constants, source)
-  update (ud, u)               Sync data/script-hub.list from git remote
-  search (se, s) <query>       Fuzzy-search script names in script-hub.list
-  pull (p) <name> [...]        Pull script(s) from remote script-hub into ASE_SCRIPTS_DIR
-  install (i) <name> [-a]        Symlink script to ~/bin (or /usr/local/bin with -a)
-  remove (uninstall, rm, ui) <name>
+  ${green}list${reset} (ls, l)                 List scripts (name and description from script header)
+  ${green}info${reset} (if) <name>             Show script metadata (author, desc, constants, source)
+  ${green}update${reset} (ud, u)               Sync data/script-hub.list from git remote
+  ${green}search${reset} (se, s) <query>       Fuzzy-search script names in script-hub.list
+  ${green}pull${reset} (p) <name> [...]        Pull script(s) from remote script-hub into ASE_SCRIPTS_DIR
+  ${green}install${reset} (i) <name> [-a]      Symlink script to ~/bin (or /usr/local/bin with -a)
+  ${green}remove${reset} (uninstall, rm, ui) <name>
                                Remove installed symlinks from ~/bin and /usr/local/bin
-  installed (id)               List scripts recorded in data/install.list
-  run (r) <name> [-- args]     Run a script
-  uninstallme [-y]             Remove ase install (bin links, share, config, completion hooks)
+  ${green}installed${reset} (id)               List scripts recorded in data/install.list
+  ${green}run${reset} (r) <name> [-- args]     Run a script
+  ${green}uninstallme${reset} [-y]             Remove ase install (bin links, share, config, completion hooks)
 
 Environment / config:
   ASE_SCRIPTS_DIR      Local scripts directory (required)
@@ -160,7 +165,13 @@ cmd_update() {
 
   mkdir -p "$(dirname "$list_path")"
   git -C "$ASE_GIT_ROOT" show "$remote_ref:$list_rel" >"$list_path"
-  echo "ase update: synced $list_path" >&2
+  local green="" reset=""
+  if [[ -t 2 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
+  # shellcheck disable=SC2059
+  echo "${green}ase update: synced $list_path${reset}" >&2
 }
 
 cmd_search() {
@@ -182,11 +193,18 @@ cmd_search() {
     return 1
   fi
 
+  local green="" reset=""
+  if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
+
   while IFS= read -r line; do
     [[ -n $line ]] || continue
     name=${line#*$'\t'}
     [[ -n $name ]] || name=$line
-    printf '%s\n' "$name"
+    # shellcheck disable=SC2059
+    printf "${green}%s${reset}\n" "$name"
   done <<< "$out"
 }
 
@@ -207,6 +225,11 @@ cmd_pull() {
     ase_die "remote ref not found: $remote_ref"
 
   local name git_path local_path pulled=0 skipped=0
+  local green="" reset=""
+  if [[ -t 2 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
   for name in "$@"; do
     if [[ -z $name || $name == *"/"* || $name == *".."* ]]; then
       ase_die "invalid script name: ${name:-<empty>}"
@@ -235,11 +258,13 @@ cmd_pull() {
 
     git -C "$ASE_GIT_ROOT" show "$remote_ref:$git_path" >"$local_path"
     ase_maybe_chmod_executable "$local_path"
-    echo "ase pull: $name -> $local_path" >&2
+    # shellcheck disable=SC2059
+    echo "ase pull: ${green}$name${reset} -> $local_path" >&2
     ((pulled++)) || true
   done
 
-  echo "ase pull: pulled $pulled, skipped $skipped" >&2
+  # shellcheck disable=SC2059
+  echo "${green}ase pull: pulled $pulled, skipped $skipped${reset}" >&2
 }
 
 cmd_installed() {
@@ -321,17 +346,25 @@ cmd_install() {
   script=$(ase_resolve_script_path "$name") || exit $?
   canon=$(ase_canonical_path "$script")
 
+  local green="" reset=""
+  if [[ -t 2 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
+
   if (( all_users )); then
     if [[ ! -w $ASE_SYSTEM_BIN ]] 2>/dev/null; then
       ase_die "cannot write to $ASE_SYSTEM_BIN; try: sudo ASE_CONFIG=\${ASE_CONFIG:-\$HOME/.config/ase/config} ase install $name -a"
     fi
     ase_install_bin_entry "$ASE_SYSTEM_BIN" "$name" "$canon"
-    echo "installed $name -> $ASE_SYSTEM_BIN/$name" >&2
+    # shellcheck disable=SC2059
+    echo "installed ${green}$name${reset} -> $ASE_SYSTEM_BIN/$name" >&2
     ase_warn_path_missing "$ASE_SYSTEM_BIN"
   else
     mkdir -p "$ASE_BIN_USER"
     ase_install_bin_entry "$ASE_BIN_USER" "$name" "$canon"
-    echo "installed $name -> $ASE_BIN_USER/$name" >&2
+    # shellcheck disable=SC2059
+    echo "installed ${green}$name${reset} -> $ASE_BIN_USER/$name" >&2
     ase_warn_path_missing "$ASE_BIN_USER"
   fi
 
@@ -350,11 +383,16 @@ cmd_remove() {
     canon=$(ase_canonical_path "$script_path")
   fi
 
-  local bindir link_path
+  local bindir link_path green="" reset=""
+  if [[ -t 2 && -z ${NO_COLOR:-} ]]; then
+    green=$'\033[32m'
+    reset=$'\033[0m'
+  fi
   for bindir in "$ASE_BIN_USER" "$ASE_SYSTEM_BIN"; do
     link_path="$bindir/$name"
     if ase_remove_bin_entry_if_matches "$link_path" "$canon" "$script_path"; then
-      echo "removed $link_path" >&2
+      # shellcheck disable=SC2059
+      echo "removed ${green}$link_path${reset}" >&2
     fi
   done
 
@@ -517,6 +555,7 @@ cmd_uninstallme() {
 
 ase_normalize_cmd() {
   case "$1" in
+    if) echo info ;;
     i) echo install ;;
     ls | l) echo list ;;
     ud | u) echo update ;;

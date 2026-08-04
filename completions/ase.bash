@@ -49,6 +49,7 @@ _ase_hub_names() {
 
 _ase_canonical_cmd() {
   case "$1" in
+    if) echo info ;;
     i) echo install ;;
     ls | l) echo list ;;
     ud | u) echo update ;;
@@ -69,7 +70,7 @@ _ase() {
   cmd=$(_ase_canonical_cmd "${words[1]:-}")
 
   if (( cword == 1 )); then
-    COMPREPLY=($(compgen -W "list ls l update ud u search se s pull p install i remove uninstall rm ui installed id run r uninstallme help" -- "$cur"))
+    COMPREPLY=($(compgen -W "list ls l info if update ud u search se s pull p install i remove uninstall rm ui installed id run r uninstallme help" -- "$cur"))
     return 0
   fi
 
@@ -89,6 +90,14 @@ _ase() {
       if [[ $cur == -* ]]; then
         COMPREPLY=($(compgen -W "-y --yes" -- "$cur"))
       fi
+      ;;
+    info)
+      if (( cword > 2 )); then
+        return 0
+      fi
+      local names
+      names=$(_ase_script_names) || return 0
+      mapfile -t COMPREPLY < <(compgen -W "$names" -- "$cur")
       ;;
     install)
       local names
