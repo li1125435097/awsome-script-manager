@@ -21,6 +21,10 @@ die() {
   exit 1
 }
 
+tolower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # curl | bash 时 stdin 是管道；交互从 /dev/tty 读，且不能 exec 替换 stdin（否则管道未读完会卡住 curl）(pipe install: read prompts from /dev/tty)
 install_can_prompt() {
   [[ -t 0 ]] && return 0
@@ -49,7 +53,7 @@ prompt_yn() {
   while true; do
     install_read -p "$question $hint " answer || true
     answer=${answer:-$default}
-    case ${answer,,} in
+    case $(tolower "$answer") in
       y|yes) return 0 ;;
       n|no) return 1 ;;
       *) echo "请输入 y 或 n。(Please enter y or n.)" ;;
@@ -501,7 +505,7 @@ main() {
       share_dir="${ASE_INSTALL_SHARE:-$USER_SHARE}"
     fi
   elif [[ -n ${ASE_INSTALL_SCOPE:-} ]]; then
-    case ${ASE_INSTALL_SCOPE,,} in
+    case $(tolower "$ASE_INSTALL_SCOPE") in
       global|system)
         bin_dir=$GLOBAL_BIN
         share_dir="${ASE_INSTALL_SHARE:-$GLOBAL_SHARE}"

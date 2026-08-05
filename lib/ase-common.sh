@@ -10,6 +10,10 @@ ase_die() {
   exit 1
 }
 
+tolower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # Drop bash's cached path for a command name (no-op outside bash).
 ase_forget_cmd_hash() {
   local name=$1
@@ -402,7 +406,7 @@ ase_prompt_yn() {
       return 1
     fi
     answer=${answer:-$default}
-    case ${answer,,} in
+    case $(tolower "$answer") in
       y | yes) return 0 ;;
       n | no) return 1 ;;
       *) echo "ase: 请输入 y 或 n。" >&2 ;;
@@ -424,10 +428,10 @@ ase_fuzzy_match_names() {
   local query=$1
   shift
   local name qlower nlower
-  qlower=${query,,}
+  qlower=$(tolower "$query")
   [[ -n $qlower ]] || return 0
   for name; do
-    nlower=${name,,}
+    nlower=$(tolower "$name")
     if [[ $nlower == *"$qlower"* ]]; then
       printf '%s\n' "$name"
     fi
