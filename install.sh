@@ -10,7 +10,18 @@ REPO_BRANCH="${ASE_INSTALL_BRANCH:-main}"
 GLOBAL_BIN="/usr/local/bin"
 GLOBAL_SHARE="/usr/local/share/ase"
 USER_BIN="${HOME}/bin"
-USER_SHARE="${XDG_DATA_HOME:-${HOME}/.local/share}/ase"
+
+install_user_share_default() {
+  if [[ -n ${XDG_DATA_HOME:-} ]]; then
+    printf '%s/ase' "${XDG_DATA_HOME%/}"
+  elif [[ $(uname -s) == Darwin ]]; then
+    printf '%s/Library/Application Support/ase' "$HOME"
+  else
+    printf '%s/.local/share/ase' "$HOME"
+  fi
+}
+
+USER_SHARE=$(install_user_share_default)
 SHARE_SCRIPTS_REL="scripts"
 # script-hub 为远程脚本树，体积可能很大；安装时不复制/检出，用 ase pull 按需拉取 (remote script tree; not copied at install — use ase pull)
 INSTALL_SHARE_COPY_ITEMS=(ase lib completions data algorithm LICENSE README.md)
@@ -90,6 +101,45 @@ install_default_scripts_dir() {
   expand_home "${ASE_INSTALL_SCRIPTS:-$git_root/$SHARE_SCRIPTS_REL}"
 }
 
+install_user_scripts_dir() {
+  local share_dir=$1
+  local dir="$share_dir/scripts"
+  if install_dir_writable "$dir"; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+  dir="$share_dir/user-scripts"
+  install_dir_writable "$dir" || \
+    die "无法写入脚本目录 ${share_dir}/scripts 或 ${share_dir}/user-scripts (Cannot write scripts directory)"
+  printf '%s\n' "$dir"
+}
+
+install_config_get_scripts_dir() {
+  local cfg=$1
+  local line
+  [[ -f $cfg ]] || return 1
+  line=$(grep -E '^ASE_SCRIPTS_DIR=' "$cfg" 2>/dev/null | tail -1) || return 1
+  line=${line#ASE_SCRIPTS_DIR=}
+  line=${line#\"}
+  line=${line%\"}
+  printf '%s\n' "$line"
+}
+
+install_update_config_scripts_dir() {
+  local cfg=$1
+  local scripts_dir=$2
+  local tmp
+  tmp=$(mktemp)
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line == ASE_SCRIPTS_DIR=* ]]; then
+      printf 'ASE_SCRIPTS_DIR=%q\n' "$scripts_dir"
+    else
+      printf '%s\n' "$line"
+    fi
+  done < "$cfg" > "$tmp"
+  mv "$tmp" "$cfg"
+}
+
 detect_src_root() {
   local script=$1
   [[ -n $script && -f $script ]] || return 1
@@ -146,30 +196,30 @@ copy_tree() {
   chmod +x "$dest/ase" 2>/dev/null || true
 }
 
-# True if the current user can create/write under share (parent or target may already exist).
-install_share_writable() {
-  local share=$1
+# True if the current user can create/write under dir.
+install_dir_writable() {
+  local dir=$1
   local parent probe
 
   if [[ $(id -u) -eq 0 ]]; then
     return 0
   fi
 
-  parent=$(dirname "$share")
+  parent=$(dirname "$dir")
   if ! mkdir -p "$parent" 2>/dev/null; then
     return 1
   fi
 
-  if [[ -e "$share" ]]; then
-    [[ -w "$share" ]] || return 1
-  elif ! [[ -w "$parent" ]]; then
+  if [[ -e $dir ]]; then
+    [[ -w $dir ]] || return 1
+  elif ! [[ -w $parent ]]; then
     return 1
   fi
 
-  if ! mkdir -p "$share" 2>/dev/null; then
+  if ! mkdir -p "$dir" 2>/dev/null; then
     return 1
   fi
-  probe="$share/.ase-install-probe.$$"
+  probe="$dir/.ase-install-probe.$$"
   if : >"$probe" 2>/dev/null; then
     rm -f "$probe"
     return 0
@@ -177,26 +227,89 @@ install_share_writable() {
   return 1
 }
 
+install_share_writable() {
+  install_dir_writable "$1"
+}
+
+install_path_owner() {
+  local path=$1
+  if stat -c '%U' "$path" >/dev/null 2>&1; then
+    stat -c '%U' "$path"
+  elif stat -f '%Su' "$path" >/dev/null 2>&1; then
+    stat -f '%Su' "$path"
+  fi
+}
+
 install_share_write_die() {
-  local share=$1
+  local share_path=${1:?install_share_write_die: missing share path}
   local parent owner msg
-  parent=$(dirname "$share")
-  msg="无法写入 $share（请检查磁盘空间与目录权限）(Cannot write to $share; check disk space and permissions)"
+  parent=$(dirname "$share_path")
+  msg="无法写入 ${share_path}（请检查磁盘空间与目录权限）(Cannot write to ${share_path}; check disk space and permissions)"
   if [[ -d $parent ]]; then
     msg=$msg$'\n'"install: 父目录权限 (parent): $(ls -ld "$parent" 2>/dev/null || echo '?')"
   fi
-  if [[ -e $share ]]; then
-    msg=$msg$'\n'"install: 目标路径 (target): $(ls -ld "$share" 2>/dev/null || echo '?')"
+  if [[ -e $share_path ]]; then
+    msg=$msg$'\n'"install: 目标路径 (target): $(ls -ld "$share_path" 2>/dev/null || echo '?')"
   fi
-  if [[ -e $parent || -e $share ]]; then
-    owner=$(stat -c '%U' "$share" 2>/dev/null || stat -c '%U' "$parent" 2>/dev/null || true)
+  if [[ -e $parent || -e $share_path ]]; then
+    owner=$(install_path_owner "$share_path" 2>/dev/null || install_path_owner "$parent" 2>/dev/null || true)
     if [[ -n $owner && $owner != "$(id -un)" ]]; then
-      msg=$msg$'\n'"install: 目录属主为 $owner，当前用户为 $(id -un)。可尝试：(Owner is $owner; current user is $(id -un). Try:)"
+      msg=$msg$'\n'"install: 目录属主为 ${owner}，当前用户为 $(id -un)。可尝试：(Owner is ${owner}; current user is $(id -un). Try:)"
       msg=$msg$'\n'"install:   sudo chown -R $(id -un):$(id -gn) $(printf '%q' "$parent")"
-      msg=$msg$'\n'"install: 或删除后重装 (or remove and reinstall): sudo rm -rf $(printf '%q' "$share")"
+      msg=$msg$'\n'"install: 或删除后重装 (or remove and reinstall): sudo rm -rf $(printf '%q' "$share_path")"
+    elif [[ -e $parent && ! -w $parent ]]; then
+      msg=$msg$'\n'"install: 父目录不可写 (parent not writable)。若 ~/.local 属主为 root，可执行：(If ~/.local is root-owned, run:)"
+      msg=$msg$'\n'"install:   sudo chown -R $(id -un):$(id -gn) $(printf '%q' "$parent")"
     fi
   fi
   die "$msg"
+}
+
+install_resolve_share_dir() {
+  local preferred=$1
+  preferred=$(expand_home "$preferred")
+  if install_share_writable "$preferred"; then
+    printf '%s\n' "$preferred"
+    return 0
+  fi
+  local fallback
+  fallback=$(install_user_share_default)
+  if [[ $preferred != "$fallback" ]] && install_share_writable "$fallback"; then
+    echo "install: ${preferred} 不可写，改用 ${fallback} (${preferred} not writable; using ${fallback})" >&2
+    printf '%s\n' "$fallback"
+    return 0
+  fi
+  if path_under_home "$preferred"; then
+    install_share_write_die "$preferred"
+  fi
+  printf '%s\n' "$preferred"
+}
+
+install_user_bin_fallback() {
+  printf '%s/bin' "$(install_user_share_default)"
+}
+
+install_resolve_bin_dir() {
+  local preferred=$1
+  preferred=$(expand_home "$preferred")
+  if is_system_bin_dir "$preferred"; then
+    printf '%s\n' "$preferred"
+    return 0
+  fi
+  if install_dir_writable "$preferred"; then
+    printf '%s\n' "$preferred"
+    return 0
+  fi
+  if [[ $(uname -s) == Darwin ]]; then
+    local fallback
+    fallback=$(install_user_bin_fallback)
+    if [[ $preferred != "$fallback" ]] && install_dir_writable "$fallback"; then
+      echo "install: ${preferred} 不可写，改用 ${fallback} (${preferred} not writable; using ${fallback})" >&2
+      printf '%s\n' "$fallback"
+      return 0
+    fi
+  fi
+  die "无法写入 ${preferred}（请检查目录权限）(Cannot write to ${preferred}; check permissions)"
 }
 
 clone_repo() {
@@ -292,16 +405,33 @@ install_to_share() {
 
 install_write_ase_config() {
   local git_root=$1
-  local cfg scripts_dir
+  local bin_dir=$2
+  local share_dir=${3:-}
+  local cfg scripts_dir prev_scripts
   cfg=$(expand_home "${ASE_CONFIG:-$HOME/.config/ase/config}")
+
   if [[ -f $cfg ]]; then
-    echo "install: 保留已有配置 $cfg (keeping existing config)"
+    prev_scripts=$(install_config_get_scripts_dir "$cfg" 2>/dev/null) || prev_scripts=""
+    if [[ -n $share_dir && -n $prev_scripts && ! -w $prev_scripts ]]; then
+      share_dir=$(expand_home "$share_dir")
+      scripts_dir=$(install_user_scripts_dir "$share_dir")
+      install_update_config_scripts_dir "$cfg" "$scripts_dir"
+      echo "install: 已将脚本目录改为 ${scripts_dir}（原 ${prev_scripts} 不可写）(Updated scripts dir; previous path not writable)"
+    else
+      echo "install: 保留已有配置 ${cfg} (keeping existing config)"
+    fi
     return 0
   fi
+
   if command -v git >/dev/null 2>&1; then
     git_root=$(git -C "$git_root" rev-parse --show-toplevel 2>/dev/null) || true
   fi
-  scripts_dir=$(install_default_scripts_dir "$git_root")
+  if [[ -n $share_dir ]]; then
+    share_dir=$(expand_home "$share_dir")
+    scripts_dir=$(install_user_scripts_dir "$share_dir")
+  else
+    scripts_dir=$(install_default_scripts_dir "$git_root")
+  fi
   mkdir -p "$(dirname "$cfg")"
   mkdir -p "$scripts_dir"
   {
@@ -314,10 +444,10 @@ install_write_ase_config() {
     if [[ $(id -u) -eq 0 ]]; then
       printf 'ASE_BIN_USER=%q\n' "$GLOBAL_BIN"
     else
-      echo 'ASE_BIN_USER="$HOME/bin"'
+      printf 'ASE_BIN_USER=%q\n' "$bin_dir"
     fi
   } >"$cfg"
-  echo "install: 已写入 $cfg（脚本目录 $scripts_dir）(wrote config; scripts dir: $scripts_dir)"
+  echo "install: 已写入 ${cfg}（脚本目录 ${scripts_dir}）(wrote config; scripts dir: ${scripts_dir})"
 }
 
 link_ase() {
@@ -351,27 +481,25 @@ path_in_path() {
   esac
 }
 
-install_bashrc_path() {
-  local bin_dir=$1
-  local bashrc="${HOME}/.bashrc"
-  local begin='# >>> ase path >>>'
-  local end='# <<< ase path <<<'
-  local export_line tmp in_block=0
+install_rc_update_block() {
+  local rc_file=$1
+  local begin=$2
+  local end=$3
+  local content=$4
+  local tmp in_block=0 line
 
-  path_in_path "$bin_dir" && return 0
-  is_system_bin_dir "$bin_dir" && return 0
+  mkdir -p "$(dirname "$rc_file")"
+  touch "$rc_file"
 
-  export_line="export PATH=\"$bin_dir:\$PATH\""
-  mkdir -p "$(dirname "$bashrc")"
-  touch "$bashrc"
-
-  if grep -qF "$begin" "$bashrc" 2>/dev/null; then
+  if grep -qF "$begin" "$rc_file" 2>/dev/null; then
     tmp=$(mktemp)
     while IFS= read -r line || [[ -n $line ]]; do
       if [[ $line == "$begin" ]]; then
         in_block=1
         printf '%s\n' "$begin"
-        printf '%s\n' "$export_line"
+        while IFS= read -r line || [[ -n $line ]]; do
+          printf '%s\n' "$line"
+        done <<< "$content"
         printf '%s\n' "$end"
         continue
       fi
@@ -380,17 +508,49 @@ install_bashrc_path() {
         continue
       fi
       printf '%s\n' "$line"
-    done < "$bashrc" > "$tmp"
-    mv "$tmp" "$bashrc"
+    done < "$rc_file" > "$tmp"
+    mv "$tmp" "$rc_file"
   else
     {
       echo ""
       echo "$begin"
-      printf '%s\n' "$export_line"
+      while IFS= read -r line || [[ -n $line ]]; do
+        printf '%s\n' "$line"
+      done <<< "$content"
       echo "$end"
-    } >> "$bashrc"
+    } >> "$rc_file"
   fi
-  echo "install: 已将 $bin_dir 加入 PATH（写入 $bashrc，新开 shell 生效；当前 shell 请 source ~/.bashrc）(Added $bin_dir to PATH in $bashrc; source ~/.bashrc for this shell)"
+}
+
+install_user_rc_files() {
+  local -a rcs=()
+  [[ -f ${HOME}/.bashrc || ${SHELL:-} == */bash ]] && rcs+=("${HOME}/.bashrc")
+  if [[ ${SHELL:-} == */zsh || -f ${HOME}/.zshrc ]]; then
+    rcs+=("${HOME}/.zshrc")
+  fi
+  ((${#rcs[@]})) || rcs+=("${HOME}/.bashrc")
+  printf '%s\n' "${rcs[@]}"
+}
+
+install_bashrc_path() {
+  local bin_dir=$1
+  local begin='# >>> ase path >>>'
+  local end='# <<< ase path <<<'
+  local export_line rc written=0
+
+  path_in_path "$bin_dir" && return 0
+  is_system_bin_dir "$bin_dir" && return 0
+
+  export_line="export PATH=\"$bin_dir:\$PATH\""
+  while IFS= read -r rc; do
+    [[ -n $rc ]] || continue
+    install_rc_update_block "$rc" "$begin" "$end" "$export_line"
+    echo "install: 已将 ${bin_dir} 加入 PATH（写入 ${rc}）(Added ${bin_dir} to PATH in ${rc})"
+    written=1
+  done < <(install_user_rc_files)
+  if (( written )); then
+    echo "install: 新开 shell 生效；zsh 用户请 source ~/.zshrc，bash 用户请 source ~/.bashrc (Open a new shell, or source your shell rc file)"
+  fi
 }
 
 path_hint() {
@@ -443,37 +603,35 @@ install_bashrc_completion() {
   local bashrc="${HOME}/.bashrc"
   local begin='# >>> ase completion >>>'
   local end='# <<< ase completion <<<'
-  local tmp in_block=0
+  local content_line
 
-  mkdir -p "$(dirname "$bashrc")"
-  touch "$bashrc"
+  content_line=$(printf '[[ -n ${ZSH_VERSION:-} ]] || { [[ -f %q ]] && . %q; }' "$comp_file" "$comp_file")
+  install_rc_update_block "$bashrc" "$begin" "$end" "$content_line"
+  echo "install: 已配置 Tab 补全（写入 ${bashrc}，仅 bash 生效）(Tab completion added to ${bashrc}; bash only)"
+}
 
-  if grep -qF "$begin" "$bashrc" 2>/dev/null; then
-    tmp=$(mktemp)
-    while IFS= read -r line || [[ -n $line ]]; do
-      if [[ $line == "$begin" ]]; then
-        in_block=1
-        printf '%s\n' "$begin"
-        printf '[[ -f %q ]] && . %q\n' "$comp_file" "$comp_file"
-        printf '%s\n' "$end"
-        continue
-      fi
-      if (( in_block )); then
-        [[ $line == "$end" ]] && in_block=0
-        continue
-      fi
-      printf '%s\n' "$line"
-    done < "$bashrc" > "$tmp"
-    mv "$tmp" "$bashrc"
-  else
-    {
-      echo ""
-      echo "$begin"
-      printf '[[ -f %q ]] && . %q\n' "$comp_file" "$comp_file"
-      echo "$end"
-    } >> "$bashrc"
-  fi
-  echo "install: 已配置 Tab 补全（写入 $bashrc，新开 shell 生效）(Tab completion added to $bashrc)"
+install_zshrc_completion() {
+  local share_dir=$1
+  local comp_dir="$share_dir/completions"
+  local zshrc="${HOME}/.zshrc"
+  local begin='# >>> ase completion >>>'
+  local end='# <<< ase completion <<<'
+  local -a lines=()
+
+  [[ -f $comp_dir/_ase ]] || return 0
+  [[ ${SHELL:-} == */zsh || -f $zshrc ]] || return 0
+
+  lines+=('unfunction _ase _ase_init_words _ase_canonical_cmd _ase_cli_dispatch 2>/dev/null')
+  lines+=('for _ase_name in sm ase asm; do')
+  lines+=('  unfunction "$_ase_name" 2>/dev/null')
+  lines+=('  complete -r "$_ase_name" 2>/dev/null')
+  lines+=('done')
+  lines+=("fpath=($comp_dir \$fpath)")
+  lines+=('autoload -Uz _ase')
+  lines+=('compdef _ase ase asm sm')
+
+  install_rc_update_block "$zshrc" "$begin" "$end" "$(printf '%s\n' "${lines[@]}")"
+  echo "install: 已配置 zsh Tab 补全（写入 ${zshrc}）(zsh Tab completion added to ${zshrc})"
 }
 
 install_enable_completion() {
@@ -481,14 +639,22 @@ install_enable_completion() {
   local comp_file="$share_dir/completions/ase.bash"
 
   [[ -f $comp_file ]] || {
-    echo "install: 跳过补全（未找到 $comp_file）(Skipping completion; file not found)"
+    echo "install: 跳过补全（未找到 ${comp_file}）(Skipping completion; file not found)"
     return 0
   }
 
   if path_under_home "$share_dir"; then
     install_bashrc_completion "$share_dir"
+    install_zshrc_completion "$share_dir"
   else
     install_global_completion "$share_dir"
+  fi
+}
+
+warn_root_user_install() {
+  local bin_dir=$1
+  if [[ $(id -u) -eq 0 ]] && ! is_system_bin_dir "$bin_dir"; then
+    echo "install: 警告：当前以 root 运行且为用户级安装，文件将归 root 所有；请改用 bash install.sh（勿加 sudo）(Warning: root + user install; files will be root-owned. Use: bash install.sh without sudo)" >&2
   fi
 }
 
@@ -552,19 +718,26 @@ main() {
   else
     bin_dir=$(expand_home "$USER_BIN")
     share_dir=$USER_SHARE
-    echo "install: 非交互模式，默认安装到 $bin_dir（可设置 ASE_INSTALL_SCOPE 或 ASE_INSTALL_BIN）(Non-interactive; default install to $bin_dir; set ASE_INSTALL_SCOPE or ASE_INSTALL_BIN)"
+    echo "install: 非交互模式，默认安装到 ${bin_dir}（可设置 ASE_INSTALL_SCOPE 或 ASE_INSTALL_BIN）(Non-interactive; default install to ${bin_dir}; set ASE_INSTALL_SCOPE or ASE_INSTALL_BIN)"
   fi
 
   if [[ -n ${ASE_INSTALL_SHARE:-} ]]; then
     share_dir=$(expand_home "$ASE_INSTALL_SHARE")
+  else
+    share_dir=$(install_resolve_share_dir "$share_dir")
   fi
 
+  if ! is_system_bin_dir "$bin_dir"; then
+    bin_dir=$(install_resolve_bin_dir "$bin_dir")
+  fi
+
+  warn_root_user_install "$bin_dir"
   install_to_share "$share_dir" "$src_root"
   link_ase "$share_dir" "$bin_dir"
   if [[ -n $src_root ]]; then
-    install_write_ase_config "$src_root"
+    install_write_ase_config "$src_root" "$bin_dir" "$share_dir"
   else
-    install_write_ase_config "$share_dir"
+    install_write_ase_config "$share_dir" "$bin_dir" "$share_dir"
   fi
   path_hint "$bin_dir"
   if [[ ${ASE_INSTALL_COMPLETION:-1} != 0 ]]; then
@@ -573,7 +746,8 @@ main() {
 
   echo
   local scripts_dir_hint
-  scripts_dir_hint=$(install_default_scripts_dir "${src_root:-$share_dir}")
+  scripts_dir_hint=$(install_config_get_scripts_dir "${ASE_CONFIG:-$HOME/.config/ase/config}" 2>/dev/null) || \
+    scripts_dir_hint=$(install_user_scripts_dir "$share_dir")
   echo "安装完成。(Installation complete.)"
   if [[ ${ASE_INSTALL_COMPLETION:-1} == 0 ]]; then
     echo "补全未自动配置（ASE_INSTALL_COMPLETION=0）。可手动：(Completion not configured; load manually:)"
@@ -582,7 +756,7 @@ main() {
     echo "若 Tab 补全无效，请确认是交互式 bash 且补全文件存在；当前 shell 可执行：(If Tab completion fails, use an interactive bash; for this shell:)"
     echo "  source \"$share_dir/completions/ase.bash\""
   fi
-  echo "脚本目录为 $scripts_dir_hint。(Scripts directory: $scripts_dir_hint)"
+  echo "脚本目录为 ${scripts_dir_hint}。(Scripts directory: ${scripts_dir_hint})"
   echo "安装未包含 script-hub；请先 ase update，再用 ase pull <name> 按需拉取脚本。(script-hub not included; run ase update, then ase pull <name> as needed.)"
 }
 

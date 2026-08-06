@@ -14,6 +14,16 @@ tolower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+ase_default_share_path() {
+  if [[ -n ${XDG_DATA_HOME:-} ]]; then
+    printf '%s/ase' "${XDG_DATA_HOME%/}"
+  elif [[ $(uname -s) == Darwin ]]; then
+    printf '%s/Library/Application Support/ase' "$HOME"
+  else
+    printf '%s/.local/share/ase' "$HOME"
+  fi
+}
+
 # Drop bash's cached path for a command name (no-op outside bash).
 ase_forget_cmd_hash() {
   local name=$1
@@ -62,8 +72,10 @@ ase_write_default_config() {
       printf 'ASE_GIT_ROOT=%q\n' "$git_root"
       echo 'ASE_GIT_SCRIPTS_REL="script-hub"'
     else
-      echo 'ASE_SCRIPTS_DIR="$HOME/.local/share/ase/scripts"'
-      echo 'ASE_GIT_ROOT="$HOME/.local/share/ase"'
+      local _ase_share
+      _ase_share=$(ase_default_share_path)
+      printf 'ASE_SCRIPTS_DIR=%q\n' "$_ase_share/scripts"
+      printf 'ASE_GIT_ROOT=%q\n' "$_ase_share"
     fi
     echo 'ASE_GIT_REMOTE="origin"'
     echo 'ASE_GIT_BRANCH="main"'
@@ -517,6 +529,7 @@ ase_is_default_share_path() {
   local d=$1
   [[ $d == /usr/local/share/ase ]] && return 0
   [[ $d == "$HOME/.local/share/ase" ]] && return 0
+  [[ $d == "$HOME/Library/Application Support/ase" ]] && return 0
   return 1
 }
 
@@ -525,11 +538,15 @@ ase_should_remove_share_dir() {
   local share_from_cmd=$2
   ase_is_default_share_path "$d" && return 0
   [[ -n $share_from_cmd && $d == "$share_from_cmd" ]] && return 0
-  if [[ -n ${ASE_GIT_ROOT:-} ]]; then
-    local git_root
-    git_root=$(ase_canonical_path "$ASE_GIT_ROOT" 2>/dev/null) || git_root=$ASE_GIT_ROOT
-    [[ $d == "$git_root" ]] && return 0
-  fi
+  return 1
+}
+
+ase_path_safe_to_remove() {
+  local p=$1
+  local share_from_cmd=${2:-}
+  [[ -n $p && $p == /* ]] || return 1
+  ase_is_default_share_path "$p" && return 0
+  [[ -n $share_from_cmd && $p == "$share_from_cmd" ]] && return 0
   return 1
 }
 
@@ -647,13 +664,21 @@ ase_remove_script_bin_links() {
 
 ase_deferred_rm_paths() {
   local -a paths=("$@")
-  local script
+  local script p safe=()
   [[ ${#paths[@]} -gt 0 ]] || return 0
+  for p in "${paths[@]}"; do
+    if ase_path_safe_to_remove "$p"; then
+      safe+=("$p")
+    else
+      echo "ase uninstallme: refused to remove (not an installed share path): $p" >&2
+    fi
+  done
+  ((${#safe[@]})) || return 0
   script=$(mktemp)
   {
     echo '#!/usr/bin/env bash'
     echo 'sleep 1'
-    for p in "${paths[@]}"; do
+    for p in "${safe[@]}"; do
       printf 'rm -rf %q\n' "$p"
     done
     printf 'rm -rf %q\n' "$script"

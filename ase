@@ -267,7 +267,7 @@ cmd_pull() {
     local_path="$ASE_SCRIPTS_DIR/$name"
     if [[ -f $local_path ]]; then
       if ase_can_prompt; then
-        if ! ase_prompt_yn "本地已有 $name，是否覆盖？" n; then
+        if ! ase_prompt_yn "本地已有 ${name}，是否覆盖？" n; then
           echo "ase pull: skipped $name" >&2
           ((skipped++)) || true
           continue
@@ -435,7 +435,7 @@ cmd_uninstallme() {
         echo "Usage: ase uninstallme [-y]" >&2
         echo "  Removes packaged ase install: script symlinks in bin, ase in PATH," >&2
         echo "  share tree, ~/.config/ase, and completion profile/bashrc hooks." >&2
-        echo "  Does not delete ASE_SCRIPTS_DIR (your pulled scripts)." >&2
+        echo "  Does not delete ASE_GIT_ROOT or ASE_SCRIPTS_DIR (your git clone / pulled scripts)." >&2
         return 0
         ;;
       *)
@@ -446,7 +446,7 @@ cmd_uninstallme() {
 
   local share_from_path share_from_cmd cfg_file cfg_dir
   local -a share_dirs=() bin_dirs=() deferred_paths=()
-  local bindir link_path name s git_root found
+  local bindir link_path name s found
 
   share_from_path=$ASE_ROOT
   share_from_cmd=$(ase_detect_share_from_command 2>/dev/null) || share_from_cmd=""
@@ -470,20 +470,12 @@ cmd_uninstallme() {
   fi
   if [[ -n $share_from_cmd ]]; then
     found=0
-    for s in "${share_dirs[@]}"; do
-      [[ $s == "$share_from_cmd" ]] && found=1
-    done
-    (( found )) || share_dirs+=("$share_from_cmd")
-  fi
-  if [[ -n ${ASE_GIT_ROOT:-} ]]; then
-    git_root=$(ase_canonical_path "$ASE_GIT_ROOT" 2>/dev/null) || git_root=$ASE_GIT_ROOT
-    if ase_share_looks_installed "$git_root" && ase_should_remove_share_dir "$git_root" "$share_from_cmd"; then
-      found=0
+    if ((${#share_dirs[@]})); then
       for s in "${share_dirs[@]}"; do
-        [[ $s == "$git_root" ]] && found=1
+        [[ $s == "$share_from_cmd" ]] && found=1
       done
-      (( found )) || share_dirs+=("$git_root")
     fi
+    (( found )) || share_dirs+=("$share_from_cmd")
   fi
 
   if [[ ${#share_dirs[@]} -eq 0 ]]; then
@@ -516,7 +508,9 @@ cmd_uninstallme() {
     done < <(ase_read_install_names_from_file "$s/data/install.list")
   done
   if [[ -n ${ASE_SCRIPTS_DIR:-} ]]; then
-    echo "  (keeping scripts dir: $ASE_SCRIPTS_DIR)" >&2
+    echo "  (keeping ASE_GIT_ROOT and scripts dir; not removed)" >&2
+    echo "  ASE_SCRIPTS_DIR: $ASE_SCRIPTS_DIR" >&2
+    [[ -n ${ASE_GIT_ROOT:-} ]] && echo "  ASE_GIT_ROOT: $ASE_GIT_ROOT" >&2
   fi
 
   if (( ! assume_yes )); then
@@ -564,15 +558,25 @@ cmd_uninstallme() {
 
   for s in "${share_dirs[@]}"; do
     found=0
-    for x in "${deferred_paths[@]}"; do
-      [[ $x == "$s" ]] && found=1
+    if ((${#deferred_paths[@]})); then
+      for x in "${deferred_paths[@]}"; do
+        [[ $x == "$s" ]] && found=1
+      done
+    fi
+    if (( ! found )); then
+      if ase_path_safe_to_remove "$s" "$share_from_cmd"; then
+        deferred_paths+=("$s")
+      else
+        echo "ase uninstallme: refused to remove (not an installed share path): $s" >&2
+      fi
+    fi
+  done
+  if ((${#deferred_paths[@]})); then
+    ase_deferred_rm_paths "${deferred_paths[@]}"
+    for s in "${deferred_paths[@]}"; do
+      echo "ase uninstallme: scheduled removal of $s" >&2
     done
-    (( found )) || deferred_paths+=("$s")
-  done
-  ase_deferred_rm_paths "${deferred_paths[@]}"
-  for s in "${deferred_paths[@]}"; do
-    echo "ase uninstallme: scheduled removal of $s" >&2
-  done
+  fi
   echo "ase uninstallme: done (share removal runs in background after exit)" >&2
 }
 

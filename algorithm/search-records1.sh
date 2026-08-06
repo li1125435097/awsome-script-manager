@@ -84,7 +84,7 @@ main() {
   local raw_query=$1
   local query=$1
   local records=${2:-$DEFAULT_RECORDS}
-  query=${query,,}
+  query=$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')
 
   [[ -n $query ]] || die "empty query"
   [[ -f $records ]] || die "records not found ($records); run: ./gen-search-records.sh"

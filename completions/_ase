@@ -1,0 +1,72 @@
+#compdef ase asm sm
+
+_ase_canonical_cmd() {
+  case "$1" in
+    if) echo info ;;
+    i) echo install ;;
+    ls|l) echo list ;;
+    ud|u) echo update ;;
+    p) echo pull ;;
+    uninstall|rm|ui) echo remove ;;
+    r) echo run ;;
+    se|s) echo search ;;
+    id) echo installed ;;
+    *) echo "$1" ;;
+  esac
+}
+
+_ase() {
+  local -a commands names
+  local cmd ase_cmd
+
+  commands=(
+    'list:List scripts (ls l)'
+    'info:Show script metadata (if)'
+    'update:Sync script-hub.list (ud u)'
+    'search:Fuzzy search (se s)'
+    'pull:Pull scripts (p)'
+    'install:Install symlink (i)'
+    'remove:Remove symlink (uninstall rm ui)'
+    'installed:List installed (id)'
+    'run:Run script (r)'
+    'uninstallme:Uninstall ase'
+    'help:Show help'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' commands
+    return
+  fi
+
+  cmd=$(_ase_canonical_cmd "${words[2]}")
+  ase_cmd=$(whence -p sm 2>/dev/null || whence -p ase 2>/dev/null || whence -p asm 2>/dev/null)
+  [[ -n $ase_cmd ]] || return
+
+  case "$cmd" in
+    pull)
+      (( CURRENT >= 3 )) || return
+      names=(${(f)"$(command "$ase_cmd" __complete_hub_names 2>/dev/null)"})
+      _describe 'script' names
+      ;;
+    info|install|remove|run)
+      (( CURRENT == 3 )) || return
+      names=(${(f)"$(command "$ase_cmd" __complete_names 2>/dev/null)"})
+      _describe 'script' names
+      ;;
+    uninstallme)
+      if [[ ${words[CURRENT]} == -* ]]; then
+        _arguments '-y[Skip confirmation]' '--yes[Skip confirmation]'
+      fi
+      ;;
+    install)
+      if [[ ${words[CURRENT]} == -* ]]; then
+        _arguments '-a[Install to /usr/local/bin]'
+      elif (( CURRENT == 3 )); then
+        names=(${(f)"$(command "$ase_cmd" __complete_names 2>/dev/null)"})
+        _describe 'script' names
+      fi
+      ;;
+  esac
+}
+
+_ase "$@"

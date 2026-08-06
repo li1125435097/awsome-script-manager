@@ -1,8 +1,44 @@
 # Bash completion for ase (also asm, sm)
 # Usage: source /path/to/completions/ase.bash
 
-_ASE_COMPLETION_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# zsh: strip stale bash-completion hooks (may persist across reloads).
+if [[ -n ${ZSH_VERSION:-} ]]; then
+  for _ase_name in sm ase asm; do
+    unfunction "$_ase_name" 2>/dev/null
+    complete -r "$_ase_name" 2>/dev/null
+    compdef -d "$_ase_name" 2>/dev/null
+  done
+  unfunction _ase _ase_canonical_cmd _ase_cli_dispatch _ase_init_words 2>/dev/null
+  return 0
+fi
+
+[[ -n ${_ASE_COMPLETION_LOADED:-} ]] && return 0
+_ASE_COMPLETION_LOADED=1
+
+_ase_completion_script() {
+  if [[ -n ${BASH_SOURCE[0]:-} ]]; then
+    printf '%s\n' "${BASH_SOURCE[0]}"
+  else
+    printf '%s\n' "$0"
+  fi
+}
+
+_ASE_COMPLETION_DIR=$(cd "$(dirname "$(_ase_completion_script)")" && pwd)
 _ASE_ROOT=$(cd "$_ASE_COMPLETION_DIR/.." && pwd)
+
+_ase_executable_path() {
+  local name=$1
+  local path=""
+
+  if type -P "$name" >/dev/null 2>&1; then
+    path=$(type -P "$name")
+  else
+    path=$(command -v "$name" 2>/dev/null) || return 1
+    [[ $(type -t "$name" 2>/dev/null) == function ]] && return 1
+    [[ -n $path && $path != "$name" && -x $path ]] || return 1
+  fi
+  [[ -n $path && -x $path ]] && printf '%s\n' "$path"
+}
 
 _ase_init_words() {
   if declare -F _init_completion >/dev/null 2>&1; then
@@ -30,20 +66,20 @@ _ase_cmd_path() {
     [[ -x $abs/$base ]] && printf '%s\n' "$abs/$base"
     return 0
   fi
-  command -v "$invoked" 2>/dev/null
+  _ase_executable_path "$invoked"
 }
 
 _ase_script_names() {
   local ase_cmd names
   ase_cmd=$(_ase_cmd_path "${words[0]}") || return 1
-  names=$("$ase_cmd" __complete_names 2>/dev/null) || return 1
+  names=$(command "$ase_cmd" __complete_names 2>/dev/null) || return 1
   printf '%s\n' "$names"
 }
 
 _ase_hub_names() {
   local ase_cmd names
   ase_cmd=$(_ase_cmd_path "${words[0]}") || return 1
-  names=$("$ase_cmd" __complete_hub_names 2>/dev/null) || return 1
+  names=$(command "$ase_cmd" __complete_hub_names 2>/dev/null) || return 1
   printf '%s\n' "$names"
 }
 
@@ -129,7 +165,7 @@ _ase_register_completions() {
   for name in "${_ASE_CLI_NAMES[@]}"; do
     complete -F _ase -o nospace "$name" 2>/dev/null || \
       complete -F _ase "$name" 2>/dev/null || true
-    target=$(command -v "$name" 2>/dev/null) || true
+    target=$(_ase_executable_path "$name") || true
     if [[ -n $target && $target != "$name" ]]; then
       complete -F _ase -o nospace "$target" 2>/dev/null || \
         complete -F _ase "$target" 2>/dev/null || true
@@ -146,9 +182,19 @@ _ase_cli_binary() {
     printf '%s\n' "$_ASE_ROOT/ase"
     return 0
   fi
+  local name path
+  for name in "${_ASE_CLI_NAMES[@]}"; do
+    path=$(_ase_executable_path "$name") || continue
+    printf '%s\n' "$path"
+    return 0
+  done
+  return 1
+}
+
+_ase_cli_on_path() {
   local name
   for name in "${_ASE_CLI_NAMES[@]}"; do
-    command -v "$name" 2>/dev/null && return 0
+    _ase_executable_path "$name" >/dev/null && return 0
   done
   return 1
 }
@@ -158,15 +204,16 @@ _ase_cli_dispatch() {
   _ase_sub=$(_ase_canonical_cmd "${1:-}")
   if [[ $_ase_sub == remove && $# -ge 2 ]]; then
     local _ase_remove_name=$2
-    "$_ASE_CLI_BIN" "$@"
+    command "$_ASE_CLI_BIN" "$@"
     local _ase_remove_status=$?
     hash -d "$_ase_remove_name" 2>/dev/null || true
     return "$_ase_remove_status"
   fi
-  "$_ASE_CLI_BIN" "$@"
+  command "$_ASE_CLI_BIN" "$@"
 }
 
 _ase_install_cli_wrapper() {
+  _ase_cli_on_path && return 0
   local bin name
   bin=$(_ase_cli_binary) || return 0
   _ASE_CLI_BIN=$bin
