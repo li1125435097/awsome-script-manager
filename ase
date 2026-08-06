@@ -478,6 +478,12 @@ cmd_uninstallme() {
     (( found )) || share_dirs+=("$share_from_cmd")
   fi
 
+  while IFS= read -r s; do
+    [[ -n $s ]] || continue
+    ase_share_dir_in_list "$s" "${share_dirs[@]}" && continue
+    share_dirs+=("$s")
+  done < <(ase_discover_installed_share_dirs)
+
   if [[ ${#share_dirs[@]} -eq 0 ]]; then
     ase_die "uninstallme: cannot detect an installed ase share directory"
   fi
@@ -493,13 +499,16 @@ cmd_uninstallme() {
 
   bin_dirs=("$ASE_SYSTEM_BIN" /usr/bin "$HOME/bin")
   [[ -n ${ASE_BIN_USER:-} ]] && bin_dirs+=("$ASE_BIN_USER")
+  for s in "${share_dirs[@]}"; do
+    bin_dirs+=("$s/bin")
+  done
 
   echo "ase uninstallme: will remove:" >&2
   for s in "${share_dirs[@]}"; do
     echo "  share: $s" >&2
   done
   echo "  config: $cfg_dir" >&2
-  echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc completion/path blocks" >&2
+  echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc and ~/.zshrc completion/path blocks" >&2
   echo "  ase/asm/sm symlinks under: ${bin_dirs[*]}" >&2
   for s in "${share_dirs[@]}"; do
     while IFS= read -r name; do
@@ -543,8 +552,8 @@ cmd_uninstallme() {
     done
   done
 
-  ase_remove_bashrc_completion_block
-  ase_remove_bashrc_path_block
+  ase_remove_rc_completion_block
+  ase_remove_rc_path_block
   ase_remove_system_completion_hooks
 
   if [[ -d $cfg_dir ]]; then
@@ -555,6 +564,15 @@ cmd_uninstallme() {
   for name in ase asm sm; do
     ase_forget_cmd_hash "$name"
   done
+  hash -r 2>/dev/null || true
+  if [[ -n ${ZSH_VERSION:-} ]]; then
+    unfunction _ase _ase_init_words _ase_canonical_cmd _ase_cli_dispatch 2>/dev/null
+    for name in ase asm sm; do
+      unfunction "$name" 2>/dev/null
+      compdef -d "$name" 2>/dev/null
+    done
+    rehash 2>/dev/null || true
+  fi
 
   for s in "${share_dirs[@]}"; do
     found=0
@@ -578,6 +596,7 @@ cmd_uninstallme() {
     done
   fi
   echo "ase uninstallme: done (share removal runs in background after exit)" >&2
+  echo "ase uninstallme: open a new shell or run 'hash -r' if sm/ase still resolves in this session" >&2
 }
 
 ase_normalize_cmd() {

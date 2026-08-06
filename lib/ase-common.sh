@@ -525,6 +525,45 @@ ase_share_looks_installed() {
   [[ -f $dir/ase && -f $dir/lib/ase-common.sh ]]
 }
 
+ase_discover_installed_share_dirs() {
+  local -a found=()
+  local -a uniq=()
+  local d s p u exists
+
+  for d in /usr/local/share/ase "$HOME/.local/share/ase" "$HOME/Library/Application Support/ase"; do
+    ase_share_looks_installed "$d" && found+=("$d")
+  done
+
+  if [[ $(uname -s) == Darwin && -d "$HOME/Library/Application Support" ]]; then
+    for s in "$HOME/Library/Application Support"/ase*; do
+      [[ -d $s ]] || continue
+      ase_share_looks_installed "$s" || continue
+      found+=("$s")
+    done
+  fi
+
+  for p in "${found[@]}"; do
+    exists=0
+    for u in "${uniq[@]}"; do
+      [[ $u == "$p" ]] && exists=1
+    done
+    (( exists )) || uniq+=("$p")
+  done
+
+  ((${#uniq[@]})) || return 0
+  printf '%s\n' "${uniq[@]}"
+}
+
+ase_share_dir_in_list() {
+  local target=$1
+  shift
+  local s
+  for s in "$@"; do
+    [[ $s == "$target" ]] && return 0
+  done
+  return 1
+}
+
 ase_is_default_share_path() {
   local d=$1
   [[ $d == /usr/local/share/ase ]] && return 0
@@ -533,10 +572,19 @@ ase_is_default_share_path() {
   return 1
 }
 
+ase_is_managed_share_path() {
+  local d=$1
+  ase_is_default_share_path "$d" && return 0
+  if [[ $(uname -s) == Darwin && $d == "$HOME/Library/Application Support"/ase* ]]; then
+    ase_share_looks_installed "$d" && return 0
+  fi
+  return 1
+}
+
 ase_should_remove_share_dir() {
   local d=$1
   local share_from_cmd=$2
-  ase_is_default_share_path "$d" && return 0
+  ase_is_managed_share_path "$d" && return 0
   [[ -n $share_from_cmd && $d == "$share_from_cmd" ]] && return 0
   return 1
 }
@@ -545,7 +593,7 @@ ase_path_safe_to_remove() {
   local p=$1
   local share_from_cmd=${2:-}
   [[ -n $p && $p == /* ]] || return 1
-  ase_is_default_share_path "$p" && return 0
+  ase_is_managed_share_path "$p" && return 0
   [[ -n $share_from_cmd && $p == "$share_from_cmd" ]] && return 0
   return 1
 }
@@ -563,15 +611,25 @@ ase_bashrc_completion_end='# <<< ase completion <<<'
 ase_bashrc_path_begin='# >>> ase path >>>'
 ase_bashrc_path_end='# <<< ase path <<<'
 
-ase_remove_bashrc_block() {
-  local begin=$1
-  local end=$2
-  local label=$3
-  local bashrc="${HOME}/.bashrc"
+ase_user_rc_files() {
+  local -a rcs=()
+  [[ -f ${HOME}/.bashrc || ${SHELL:-} == */bash ]] && rcs+=("${HOME}/.bashrc")
+  if [[ ${SHELL:-} == */zsh || -f ${HOME}/.zshrc ]]; then
+    rcs+=("${HOME}/.zshrc")
+  fi
+  ((${#rcs[@]})) || rcs+=("${HOME}/.bashrc")
+  printf '%s\n' "${rcs[@]}"
+}
+
+ase_remove_rc_block() {
+  local rc=$1
+  local begin=$2
+  local end=$3
+  local label=$4
   local tmp in_block=0 changed=0
 
-  [[ -f $bashrc ]] || return 0
-  grep -qF "$begin" "$bashrc" 2>/dev/null || return 0
+  [[ -f $rc ]] || return 0
+  grep -qF "$begin" "$rc" 2>/dev/null || return 0
 
   tmp=$(mktemp)
   while IFS= read -r line || [[ -n $line ]]; do
@@ -585,21 +643,42 @@ ase_remove_bashrc_block() {
       continue
     fi
     printf '%s\n' "$line"
-  done < "$bashrc" > "$tmp"
+  done < "$rc" > "$tmp"
   if (( changed )); then
-    mv "$tmp" "$bashrc"
-    echo "ase uninstallme: removed $label block from $bashrc" >&2
+    mv "$tmp" "$rc"
+    echo "ase uninstallme: removed $label block from $rc" >&2
   else
     rm -f "$tmp"
   fi
 }
 
+ase_remove_rc_completion_block() {
+  local rc
+  while IFS= read -r rc; do
+    [[ -n $rc ]] || continue
+    ase_remove_rc_block "$rc" "$ase_bashrc_completion_begin" "$ase_bashrc_completion_end" "completion"
+  done < <(ase_user_rc_files)
+}
+
+ase_remove_rc_path_block() {
+  local rc
+  while IFS= read -r rc; do
+    [[ -n $rc ]] || continue
+    ase_remove_rc_block "$rc" "$ase_bashrc_path_begin" "$ase_bashrc_path_end" "path"
+  done < <(ase_user_rc_files)
+}
+
+# Deprecated aliases (bash-only names kept for callers outside this repo).
+ase_remove_bashrc_block() {
+  ase_remove_rc_block "${HOME}/.bashrc" "$1" "$2" "$3"
+}
+
 ase_remove_bashrc_completion_block() {
-  ase_remove_bashrc_block "$ase_bashrc_completion_begin" "$ase_bashrc_completion_end" "completion"
+  ase_remove_rc_completion_block
 }
 
 ase_remove_bashrc_path_block() {
-  ase_remove_bashrc_block "$ase_bashrc_path_begin" "$ase_bashrc_path_end" "path"
+  ase_remove_rc_path_block
 }
 
 ase_remove_system_completion_hooks() {

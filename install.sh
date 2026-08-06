@@ -25,7 +25,8 @@ USER_SHARE=$(install_user_share_default)
 SHARE_SCRIPTS_REL="scripts"
 # script-hub 为远程脚本树，体积可能很大；安装时不复制/检出，用 ase pull 按需拉取 (remote script tree; not copied at install — use ase pull)
 INSTALL_SHARE_COPY_ITEMS=(ase lib completions data algorithm LICENSE README.md)
-INSTALL_SHARE_SPARSE_PATHS=(ase lib completions data algorithm LICENSE README.md install.sh)
+# Root-level files need a leading slash in non-cone sparse checkout (ase is a file, not a dir).
+INSTALL_SHARE_SPARSE_PATHS=(/ase /lib /completions /data /algorithm /LICENSE /README.md /install.sh)
 
 die() {
   echo "install: $*" >&2
@@ -173,11 +174,11 @@ install_apply_sparse_checkout() {
   local dest=$1
   local as_root=${2:-0}
   if [[ $as_root -eq 1 ]]; then
-    run_as_root git -C "$dest" sparse-checkout init --cone
+    run_as_root git -C "$dest" sparse-checkout init --no-cone
     run_as_root git -C "$dest" sparse-checkout set "${INSTALL_SHARE_SPARSE_PATHS[@]}"
     run_as_root rm -rf "$dest/script-hub"
   else
-    git -C "$dest" sparse-checkout init --cone
+    git -C "$dest" sparse-checkout init --no-cone
     git -C "$dest" sparse-checkout set "${INSTALL_SHARE_SPARSE_PATHS[@]}"
     rm -rf "$dest/script-hub"
   fi
@@ -237,6 +238,8 @@ install_path_owner() {
     stat -c '%U' "$path"
   elif stat -f '%Su' "$path" >/dev/null 2>&1; then
     stat -f '%Su' "$path"
+  else
+    return 1
   fi
 }
 
@@ -265,19 +268,30 @@ install_share_write_die() {
   die "$msg"
 }
 
+install_mac_share_fallback() {
+  printf '%s/Library/Application Support/ase' "$HOME"
+}
+
 install_resolve_share_dir() {
-  local preferred=$1
+  local preferred=$1 fallback
   preferred=$(expand_home "$preferred")
   if install_share_writable "$preferred"; then
     printf '%s\n' "$preferred"
     return 0
   fi
-  local fallback
   fallback=$(install_user_share_default)
   if [[ $preferred != "$fallback" ]] && install_share_writable "$fallback"; then
     echo "install: ${preferred} 不可写，改用 ${fallback} (${preferred} not writable; using ${fallback})" >&2
     printf '%s\n' "$fallback"
     return 0
+  fi
+  if [[ $(uname -s) == Darwin ]]; then
+    fallback=$(install_mac_share_fallback)
+    if [[ $preferred != "$fallback" ]] && install_share_writable "$fallback"; then
+      echo "install: ${preferred} 不可写，改用 ${fallback} (${preferred} not writable; using ${fallback})" >&2
+      printf '%s\n' "$fallback"
+      return 0
+    fi
   fi
   if path_under_home "$preferred"; then
     install_share_write_die "$preferred"
@@ -617,16 +631,18 @@ install_zshrc_completion() {
   local begin='# >>> ase completion >>>'
   local end='# <<< ase completion <<<'
   local -a lines=()
+  local q_comp_dir
 
   [[ -f $comp_dir/_ase ]] || return 0
   [[ ${SHELL:-} == */zsh || -f $zshrc ]] || return 0
 
+  q_comp_dir=$(printf '%q' "$comp_dir")
   lines+=('unfunction _ase _ase_init_words _ase_canonical_cmd _ase_cli_dispatch 2>/dev/null')
   lines+=('for _ase_name in sm ase asm; do')
   lines+=('  unfunction "$_ase_name" 2>/dev/null')
   lines+=('  complete -r "$_ase_name" 2>/dev/null')
   lines+=('done')
-  lines+=("fpath=($comp_dir \$fpath)")
+  lines+=("fpath=($q_comp_dir \$fpath)")
   lines+=('autoload -Uz _ase')
   lines+=('compdef _ase ase asm sm')
 
