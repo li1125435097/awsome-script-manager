@@ -11,6 +11,7 @@ _ase_canonical_cmd() {
     r) echo run ;;
     se|s) echo search ;;
     id) echo installed ;;
+    cf) echo conf ;;
     *) echo "$1" ;;
   esac
 }
@@ -28,6 +29,7 @@ _ase() {
     'install:Install symlink (i)'
     'remove:Remove symlink (uninstall rm ui)'
     'installed:List installed (id)'
+    'conf:Show config file (cf)'
     'run:Run script (r)'
     'uninstallme:Uninstall ase'
     'help:Show help'

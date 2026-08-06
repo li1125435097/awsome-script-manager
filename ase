@@ -31,6 +31,7 @@ Commands (aliases in parentheses):
   ${green}remove${reset} (uninstall, rm, ui) <name>
                                Remove installed symlinks from ~/bin and /usr/local/bin
   ${green}installed${reset} (id)               List scripts recorded in data/install.list
+  ${green}conf${reset} (cf)                    Show ase config file (~/.config/ase/config)
   ${green}run${reset} (r) <name> [-- args]     Run a script
   ${green}uninstallme${reset} [-y]             Remove ase install (bin links, share, config, completion hooks)
 
@@ -290,6 +291,17 @@ cmd_pull() {
   echo "${green}ase pull: pulled $pulled, skipped $skipped${reset}" >&2
 }
 
+cmd_conf() {
+  local cfg="${ASE_CONFIG:-$HOME/.config/ase/config}"
+  if [[ $cfg == "~/"* ]]; then
+    cfg="$HOME/${cfg#~/}"
+  elif [[ $cfg == "~" ]]; then
+    cfg="$HOME"
+  fi
+  [[ -f $cfg ]] || ase_die "config not found: $cfg"
+  cat "$cfg"
+}
+
 cmd_installed() {
   ase_load_config
   local names=() name intro len max=0
@@ -508,7 +520,8 @@ cmd_uninstallme() {
     echo "  share: $s" >&2
   done
   echo "  config: $cfg_dir" >&2
-  echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc and ~/.zshrc completion/path blocks" >&2
+  echo "  env: ~/.config/ase/env.sh; hooks in ~/.profile, ~/.zshenv, ~/.bash_profile, ~/.bashrc" >&2
+  echo "  completion: /etc/profile.d/ase-completion.sh, /etc/bash_completion.d/ase, ~/.bashrc and ~/.zshrc completion blocks" >&2
   echo "  ase/asm/sm symlinks under: ${bin_dirs[*]}" >&2
   for s in "${share_dirs[@]}"; do
     while IFS= read -r name; do
@@ -553,7 +566,7 @@ cmd_uninstallme() {
   done
 
   ase_remove_rc_completion_block
-  ase_remove_rc_path_block
+  ase_remove_env_hooks
   ase_remove_system_completion_hooks
 
   if [[ -d $cfg_dir ]]; then
@@ -610,6 +623,7 @@ ase_normalize_cmd() {
     r) echo run ;;
     se | s) echo search ;;
     id) echo installed ;;
+    cf) echo conf ;;
     *) echo "$1" ;;
   esac
 }
@@ -627,6 +641,7 @@ main() {
     install) cmd_install "${@:2}" ;;
     remove) cmd_remove "${@:2}" ;;
     installed) cmd_installed "${@:2}" ;;
+    conf) cmd_conf "${@:2}" ;;
     uninstallme) cmd_uninstallme "${@:2}" ;;
     run) cmd_run "${@:2}" ;;
     __complete_names) cmd_complete_names ;;

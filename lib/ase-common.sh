@@ -90,12 +90,14 @@ ase_write_default_config() {
 
 ase_warn_path_missing() {
   local bin_dir=$1
+  local env_file
+  env_file=$(ase_env_file)
   [[ -n $bin_dir ]] || return 0
   case ":${PATH}:" in
     *":$bin_dir:"*) return 0 ;;
   esac
   echo "ase: $bin_dir is not on PATH; the command may not run until you add it or use -a." >&2
-  echo "ase:  export PATH=\"$bin_dir:\$PATH\"" >&2
+  echo "ase:  re-run install.sh, or: . $env_file" >&2
   echo "ase:  or: ase install <name> -a  # -> $ASE_SYSTEM_BIN" >&2
 }
 
@@ -608,8 +610,30 @@ ase_detect_share_from_command() {
 
 ase_bashrc_completion_begin='# >>> ase completion >>>'
 ase_bashrc_completion_end='# <<< ase completion <<<'
+ase_env_begin='# >>> ase env >>>'
+ase_env_end='# <<< ase env <<<'
+# Legacy install.sh path blocks (removed on upgrade).
 ase_bashrc_path_begin='# >>> ase path >>>'
 ase_bashrc_path_end='# <<< ase path <<<'
+
+ase_env_file() {
+  printf '%s/ase/env.sh' "${XDG_CONFIG_HOME:-$HOME/.config}"
+}
+
+ase_env_hook_files() {
+  printf '%s\n' \
+    "${HOME}/.profile" \
+    "${HOME}/.zshenv" \
+    "${HOME}/.bash_profile" \
+    "${HOME}/.bashrc"
+}
+
+ase_env_hook_line() {
+  local env_file=$1
+  local q
+  q=$(printf '%q' "$env_file")
+  printf '[ -f %s ] && . %s' "$q" "$q"
+}
 
 ase_user_rc_files() {
   local -a rcs=()
@@ -668,6 +692,25 @@ ase_remove_rc_path_block() {
   done < <(ase_user_rc_files)
 }
 
+ase_remove_env_hook_blocks() {
+  local rc
+  while IFS= read -r rc; do
+    [[ -n $rc ]] || continue
+    ase_remove_rc_block "$rc" "$ase_env_begin" "$ase_env_end" "env"
+  done < <(ase_env_hook_files)
+}
+
+ase_remove_env_hooks() {
+  local env_file
+  env_file=$(ase_env_file)
+  ase_remove_env_hook_blocks
+  ase_remove_rc_path_block
+  if [[ -f $env_file ]]; then
+    rm -f "$env_file"
+    echo "ase uninstallme: removed $env_file" >&2
+  fi
+}
+
 # Deprecated aliases (bash-only names kept for callers outside this repo).
 ase_remove_bashrc_block() {
   ase_remove_rc_block "${HOME}/.bashrc" "$1" "$2" "$3"
@@ -678,7 +721,7 @@ ase_remove_bashrc_completion_block() {
 }
 
 ase_remove_bashrc_path_block() {
-  ase_remove_rc_path_block
+  ase_remove_env_hooks
 }
 
 ase_remove_system_completion_hooks() {

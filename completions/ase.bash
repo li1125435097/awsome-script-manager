@@ -94,6 +94,7 @@ _ase_canonical_cmd() {
     r) echo run ;;
     se | s) echo search ;;
     id) echo installed ;;
+    cf) echo conf ;;
     *) echo "$1" ;;
   esac
 }
@@ -106,7 +107,7 @@ _ase() {
   cmd=$(_ase_canonical_cmd "${words[1]:-}")
 
   if (( cword == 1 )); then
-    COMPREPLY=($(compgen -W "list ls l info if update ud u search se s pull p install i remove uninstall rm ui installed id run r uninstallme help" -- "$cur"))
+    COMPREPLY=($(compgen -W "list ls l info if update ud u search se s pull p install i remove uninstall rm ui installed id conf cf run r uninstallme help" -- "$cur"))
     return 0
   fi
 
